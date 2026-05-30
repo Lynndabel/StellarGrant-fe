@@ -23,13 +23,13 @@ export function Step2Milestones() {
 
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
 
-  const milestones = watch("milestones") || [];
+  const milestones = watch("milestones") as GrantFormData["milestones"] || [];
   const totalBudget = watch("totalBudget") || 0;
   const budgetToken = watch("budgetToken") === "native" ? "XLM" : "USDC";
 
   // Calculate allocations
   const totalAllocated = milestones.reduce(
-    (sum: number, m: any) => sum + (Number(m?.reward) || 0),
+    (sum: number, m: { reward?: string | number }) => sum + (Number(m?.reward) || 0),
     0
   );
   const isBalanced = Math.abs(totalAllocated - totalBudget) < 0.0001;

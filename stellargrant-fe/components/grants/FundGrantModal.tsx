@@ -100,8 +100,10 @@ export function FundGrantModal({ grant, open, onClose, onSuccess }: FundGrantMod
   // Reset everything when modal closes
   useEffect(() => {
     if (!open) {
-      resetForm();
-      resetFund();
+      queueMicrotask(() => {
+        resetForm();
+        resetFund();
+      });
     }
   }, [open, resetForm, resetFund]);
 

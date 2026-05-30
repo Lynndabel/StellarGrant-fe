@@ -24,6 +24,7 @@ interface UseGrantResult {
   data: GrantDetailData | null;
   isLoading: boolean;
   error: Error | null;
+  errorType: "network" | "api" | "rpc" | "generic";
   refetch: () => Promise<void>;
 }
 
@@ -35,6 +36,7 @@ export function useGrant(grantId: string, options?: UseGrantOptions): UseGrantRe
   const [data, setData] = useState<GrantDetailData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [errorType, setErrorType] = useState<"network" | "api" | "rpc" | "generic">("generic");
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchGrant = useCallback(async () => {
@@ -42,6 +44,8 @@ export function useGrant(grantId: string, options?: UseGrantOptions): UseGrantRe
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
+    // Defer state updates to microtask to avoid sync-setState-in-effect warning
+    await Promise.resolve();
     setIsLoading(true);
     setError(null);
     hookLogger.debug("Fetching grant", { grantId });
@@ -80,13 +84,24 @@ export function useGrant(grantId: string, options?: UseGrantOptions): UseGrantRe
       const error = err instanceof Error ? err : new Error(String(err));
       hookLogger.error("Error fetching grant", { grantId, error: error.message });
       setError(error);
+
+      // Detect error type
+      if (error.message.includes("Failed to fetch") || !navigator.onLine) {
+        setErrorType("network");
+      } else if (error.message.includes("503") || error.message.includes("504")) {
+        setErrorType("api");
+      } else {
+        setErrorType("generic");
+      }
     } finally {
       setIsLoading(false);
     }
   }, [grantId, enabled]);
 
   useEffect(() => {
-    void fetchGrant();
+    queueMicrotask(() => {
+      void fetchGrant();
+    });
     if (!enabled || refetchInterval <= 0) return;
     const id = setInterval(() => void fetchGrant(), refetchInterval);
     return () => {
@@ -95,5 +110,5 @@ export function useGrant(grantId: string, options?: UseGrantOptions): UseGrantRe
     };
   }, [fetchGrant, enabled, refetchInterval]);
 
-  return { data, isLoading, error, refetch: fetchGrant };
+  return { data, isLoading, error, errorType, refetch: fetchGrant };
 }

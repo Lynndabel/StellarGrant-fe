@@ -55,6 +55,7 @@ export default function GrantsPage() {
   const [grants, setGrants] = useState<GrantCardInput[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<"network" | "api" | "rpc" | "generic">("generic");
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
@@ -70,7 +71,10 @@ export default function GrantsPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load grants");
+          const error = err instanceof Error ? err : new Error(String(err));
+          setError(error.message);
+          // @ts-expect-error - type is a custom property on StellarGrantsError
+          setErrorType(err.type ?? "generic");
         }
       } finally {
         if (!cancelled) {
@@ -103,6 +107,7 @@ export default function GrantsPage() {
 
       {error && (
         <ErrorCard
+          type={errorType}
           message={error}
           onRetry={() => setRetryCount((c) => c + 1)}
         />

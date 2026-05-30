@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 
 interface RewardCalculatorProps {
   totalBudget: number; // in XLM
@@ -20,12 +20,12 @@ export function RewardCalculator({
   const [previousRewards, setPreviousRewards] = useState<number[] | null>(null);
   const [showUndo, setShowUndo] = useState(false);
 
-  // Initialize weights if milestone count changes
-  useEffect(() => {
-    if (weights.length !== milestoneCount) {
-      setWeights(new Array(milestoneCount).fill(1));
-    }
-  }, [milestoneCount, weights.length]);
+  // Adjust weights if milestone count changes (syncing state from props during render)
+  const [prevMilestoneCount, setPrevMilestoneCount] = useState(milestoneCount);
+  if (milestoneCount !== prevMilestoneCount) {
+    setPrevMilestoneCount(milestoneCount);
+    setWeights(new Array(milestoneCount).fill(1));
+  }
 
   const round = (num: number) => Math.round(num * 100) / 100;
 

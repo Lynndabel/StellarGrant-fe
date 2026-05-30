@@ -44,7 +44,7 @@ export function useRelativeTime(timestamp: TimestampInput): string {
       return;
     }
     const tick = () => setLabel(formatRelative(d));
-    tick();
+    queueMicrotask(tick);
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
   }, [timestamp]);

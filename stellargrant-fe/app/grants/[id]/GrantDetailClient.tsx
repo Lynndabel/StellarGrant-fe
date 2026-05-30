@@ -19,8 +19,11 @@ import { useGrant } from "@/hooks/useGrant";
 import { useFunders } from "@/hooks/useFunders";
 import { useGrantBalances } from "@/hooks/useGrantBalances";
 import { useRelativeTime } from "@/hooks/useRelativeTime";
+import { useContractEvents } from "@/hooks/useContractEvents";
+import { useOptimisticGrant } from "@/hooks/useOptimisticGrant";
 import { toast } from "@/lib/toast";
-import type { TokenMetadata } from "@/types";
+import { ErrorCard } from "@/components/ui/ErrorCard";
+import type { TokenMetadata, Grant } from "@/types";
 import type { GrantBalances } from "@/lib/stellar/balances";
 
 function daysUntilDeadline(deadlineTs: bigint): number {
@@ -59,29 +62,41 @@ function GrantDetailSkeleton() {
   );
 }
 
-function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className="container mx-auto max-w-6xl px-4 py-8">
-      <div className="rounded-none border border-danger/40 bg-danger/10 p-6">
-        <p className="text-sm text-danger mb-4">{message}</p>
-        <button
-          onClick={onRetry}
-          className="px-4 py-2 text-sm font-medium rounded-none border border-accent-secondary text-accent-secondary hover:bg-accent-secondary/10 transition-colors"
-        >
-          Retry
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function GrantDetailContent({ grantId }: { grantId: string }) {
-  const { data, isLoading, error, refetch } = useGrant(grantId);
+  const { data, isLoading, error, errorType, refetch } = useGrant(grantId);
+  const { 
+    events, 
+    connectionStatus 
+  } = useContractEvents({ grantId });
+  
+  const { 
+    grant: optimisticGrant, 
+    applyMutation
+  } = useOptimisticGrant(data?.grant ?? {} as Grant, data?.milestones ?? []);
+
   const { funders, isLoading: fundersLoading, refetch: refetchFunders } = useFunders(grantId);
   const [fundModalOpen, setFundModalOpen] = useState(false);
   const [tokenMetadata, setTokenMetadata] = useState<TokenMetadata | null>(null);
 
-  const grant = data?.grant;
+  // Handle incoming GrantFunded events
+  useEffect(() => {
+    const latestEvent = events[events.length - 1];
+    if (latestEvent?.type === "GrantFunded") {
+      // 1. apply optimistic update
+      if (latestEvent.data.amount) {
+        applyMutation({ 
+          type: "fund", 
+          amount: BigInt(latestEvent.data.amount as string)
+        });
+      }
+      // 2. refetch confirmed data
+      void refetch();
+      void refetchFunders();
+    }
+  }, [events, applyMutation, refetch, refetchFunders]);
+
+  const grant = optimisticGrant;
   const milestones = data?.milestones ?? [];
 
   const handleBalanceChange = useCallback(
@@ -154,10 +169,14 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
 
   if (error || !grant || !data) {
     return (
-      <ErrorCard
-        message={error?.message ?? "Grant not found."}
-        onRetry={() => void refetch()}
-      />
+      <div className="container mx-auto max-w-6xl px-4 py-8">
+        <ErrorCard
+          type={errorType}
+          message={error?.message}
+          onRetry={() => void refetch()}
+          title={!grant && !error ? "Grant Not Found" : undefined}
+        />
+      </div>
     );
   }
 
@@ -301,6 +320,13 @@ function GrantDetailContent({ grantId }: { grantId: string }) {
                 Fund This Grant
               </button>
             )}
+            
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <div className={`h-2 w-2 rounded-full ${connectionStatus === 'connected' ? 'bg-success animate-pulse' : 'bg-text-muted'}`} />
+              <span className={`font-mono text-[10px] uppercase tracking-widest ${connectionStatus === 'connected' ? 'text-success' : 'text-text-muted'}`}>
+                {connectionStatus === 'connected' ? 'Live' : 'Offline'}
+              </span>
+            </div>
           </section>
 
           <section className="border border-border-color bg-surface p-5 ring-1 ring-border-color">

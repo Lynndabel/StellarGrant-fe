@@ -14,11 +14,24 @@ import { StellarGrantsProvider } from "@/components/StellarGrantsProvider";
 import { SocketProvider } from "@/hooks/useSocket";
 import { NotificationToast } from "@/components/ui/NotificationToast";
 
+import { OfflineBanner } from "@/components/layout/OfflineBanner";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+import { useEffect } from "react";
+
 export function Providers({ children }: { children: React.ReactNode }) {
+  const { isOnline } = useNetworkStatus();
+
+  useEffect(() => {
+    if (isOnline) {
+      void queryClient.refetchQueries({ type: "active" });
+    }
+  }, [isOnline]);
+
   return (
     <QueryClientProvider client={queryClient}>
       <StellarGrantsProvider>
         <SocketProvider>
+          <OfflineBanner />
           {children}
           <NotificationToast />
         </SocketProvider>
