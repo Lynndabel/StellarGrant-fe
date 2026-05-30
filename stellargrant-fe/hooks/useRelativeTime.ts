@@ -40,7 +40,7 @@ export function useRelativeTime(timestamp: TimestampInput): string {
   useEffect(() => {
     const d = toDate(timestamp);
     if (!d) {
-      setLabel("");
+      queueMicrotask(() => setLabel(""));
       return;
     }
     const tick = () => setLabel(formatRelative(d));

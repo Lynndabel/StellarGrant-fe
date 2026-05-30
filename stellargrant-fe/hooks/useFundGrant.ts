@@ -58,7 +58,7 @@ export function useFundGrant(): UseFundGrantReturn {
   // Load the connected wallet's own balance
   useEffect(() => {
     if (!address) {
-      setWalletBalance(null);
+      queueMicrotask(() => setWalletBalance(null));
       return;
     }
     const controller = new AbortController();
