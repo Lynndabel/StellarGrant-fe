@@ -480,7 +480,13 @@ impl StellarGrantsContract {
         let mut approved_count = 0;
         for milestone_idx in 0..total_milestones {
             if let Some(milestone) = Storage::get_milestone(env, grant_id, milestone_idx) {
-                if milestone.state != MilestoneState::Approved {
+                // A milestone may already be `Paid` here: `finalize_grant_release`
+                // pays out milestones before this function is called a second
+                // time from `execute_escrow_release` once a multisig-gated
+                // release actually executes (issue #696).
+                if milestone.state != MilestoneState::Approved
+                    && milestone.state != MilestoneState::Paid
+                {
                     return Err(ContractError::NotAllMilestonesApproved);
                 }
                 total_paid += milestone.amount;
@@ -587,6 +593,11 @@ impl StellarGrantsContract {
             return Ok(());
         }
 
+        // All milestone payouts above have actually left escrow at this
+        // point (Soroban invocations are atomic, so any failure before here
+        // would have reverted these writes) — safe to transition to Paid.
+        governance::mark_milestones_paid(env, grant_id, grant.total_milestones);
+
         Self::complete_grant(env, grant_id, total_paid, remaining_balance)
     }
 
@@ -688,6 +699,20 @@ impl StellarGrantsContract {
         reviewer_reward::record_participation(&env, &reviewer, grant_id, milestone_idx, false);
 
         if result.quorum_reached {
+            // Issue #699: notify subscribers watching this grant of the vote
+            // outcome, regardless of which branch it took below.
+            let notif_event = if result.approved {
+                NotificationEvent::MilestoneApproved
+            } else {
+                NotificationEvent::MilestoneRejected
+            };
+            notification::emit_notification(
+                &env,
+                notif_event,
+                &SubscriptionScope::PerGrant(grant_id),
+                reviewer_sla::milestone_sla_id(grant_id, milestone_idx) as u128,
+            );
+
             if result.approved {
                 Self::update_contributor_reputation(
                     &env,
@@ -1777,6 +1802,13 @@ impl StellarGrantsContract {
         let grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
         dispute::raise_dispute(&env, &grant, milestone_idx, &caller, reason)?;
         metrics::increment(&env, MetricField::DisputesRaised, 1);
+        // Issue #699: notify subscribers watching this grant.
+        notification::emit_notification(
+            &env,
+            NotificationEvent::DisputeRaised,
+            &SubscriptionScope::PerGrant(grant_id),
+            reviewer_sla::milestone_sla_id(grant_id, milestone_idx) as u128,
+        );
         Ok(())
     }
 
@@ -2248,6 +2280,10 @@ impl StellarGrantsContract {
         reentrancy::with_non_reentrant(&env, || {
             let grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
             escrow_multisig::execute_release(&env, grant_id, milestone_idx)?;
+            // The multisig-gated release just transferred funds for the
+            // milestones that were still `Approved` — transition them to
+            // `Paid` now that the payout is confirmed (issue #696).
+            governance::mark_milestones_paid(&env, grant_id, grant.total_milestones);
             let total_paid =
                 Self::compute_total_paid_if_quorum_ready(&env, grant_id, grant.total_milestones)?;
             Self::complete_grant(&env, grant_id, total_paid, 0)
@@ -4634,6 +4670,14 @@ fn apply_milestone_submission(
     data_export::set_last_updated(env, grant_id, env.ledger().timestamp());
     Events::emit_milestone_submitted(env, grant_id, milestone_idx, description);
 
+    // Issue #699: notify subscribers watching this grant.
+    notification::emit_notification(
+        env,
+        NotificationEvent::MilestoneSubmitted,
+        &SubscriptionScope::PerGrant(grant_id),
+        reviewer_sla::milestone_sla_id(grant_id, milestone_idx) as u128,
+    );
+
     audit::log(
         env,
         grant_id,
@@ -4742,6 +4786,16 @@ pub(crate) fn internal_grant_create(
     grant_index::on_grant_created(env, grant_id, owner, token, GrantStatus::Active);
 
     Events::emit_grant_created(env, grant_id, owner.clone(), title, total_amount);
+
+    // Issue #699: notify subscribers following this owner that a new grant
+    // was created. Scoped by contributor (not grant) since a subscriber
+    // can't know a grant's id before it exists.
+    notification::emit_notification(
+        env,
+        NotificationEvent::NewGrant,
+        &SubscriptionScope::PerContributor(owner.clone()),
+        grant_id as u128,
+    );
 
     audit::log(
         env,
