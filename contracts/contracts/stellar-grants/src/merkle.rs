@@ -181,7 +181,7 @@ mod tests {
             let h23 = hash_pair(&env, &h2, &h3);
 
             let mut siblings = Vec::new(&env);
-            siblings.push_back(h1);
+            siblings.push_back(h1.clone());
             siblings.push_back(h23);
 
             let valid = MerkleProof {

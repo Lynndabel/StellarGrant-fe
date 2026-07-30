@@ -230,7 +230,7 @@ mod tests {
     use super::*;
     use crate::storage::Storage;
     use crate::types::{Grant, GrantStatus, Milestone, MilestoneState};
-    use soroban_sdk::{testutils::Address as _, Env, Map, String, Vec};
+    use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Env, Map, String, Vec};
 
     fn setup() -> (Env, Address, Address, Address) {
         let env = Env::default();
