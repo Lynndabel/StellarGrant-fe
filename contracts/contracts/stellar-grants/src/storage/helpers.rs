@@ -2443,9 +2443,22 @@ mod tests {
         let env = Env::default();
         let owner = Address::generate(&env);
         let grant = crate::types::Grant {
+            id: 1,
             owner: owner.clone(),
+            title: soroban_sdk::String::from_str(&env, "Test Grant"),
+            description: soroban_sdk::String::from_str(&env, "Test"),
+            token: Address::generate(&env),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 0,
+            milestone_amount: 0,
+            reviewers: soroban_sdk::Vec::new(&env),
             total_milestones: 3,
-            ..Default::default()
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: soroban_sdk::Vec::new(&env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
         };
         Storage::set_grant(&env, 1, &grant);
 

@@ -1859,6 +1859,12 @@ impl StellarGrantsContract {
     }
 
     // ── Clawback Mechanism Entry Points ───────────────────────────────────────
+    //
+    // Note: none of these wrappers call `.require_auth()` themselves — each
+    // delegates to a `clawback::*` function that already calls it internally.
+    // A duplicate `require_auth()` call for the same address at the same
+    // invocation depth trips Soroban's "frame is already authorized" auth
+    // error, so the check belongs in exactly one place (the module fn).
 
     pub fn clawback_initiate(
         env: Env,
@@ -1867,7 +1873,6 @@ impl StellarGrantsContract {
         milestone_idx: u32,
         reason: String,
     ) -> Result<(), ContractError> {
-        initiator.require_auth();
         clawback::initiate(&env, &initiator, grant_id, milestone_idx, reason)
     }
 
@@ -1877,7 +1882,6 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
-        approver.require_auth();
         clawback::approve(&env, &approver, grant_id, milestone_idx)
     }
 
@@ -1887,8 +1891,25 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
-        contributor.require_auth();
         clawback::dispute(&env, &contributor, grant_id, milestone_idx)
+    }
+
+    pub fn clawback_authorize_pull(
+        env: Env,
+        contributor: Address,
+        grant_id: u64,
+        token: Address,
+        amount: i128,
+        live_until_ledger: u32,
+    ) -> Result<(), ContractError> {
+        clawback::authorize_pull(
+            &env,
+            &contributor,
+            grant_id,
+            &token,
+            amount,
+            live_until_ledger,
+        )
     }
 
     pub fn clawback_execute(
@@ -1897,7 +1918,6 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<i128, ContractError> {
-        caller.require_auth();
         clawback::execute(&env, &caller, grant_id, milestone_idx)
     }
 
@@ -1907,7 +1927,6 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
-        admin.require_auth();
         clawback::cancel(&env, &admin, grant_id, milestone_idx)
     }
 
