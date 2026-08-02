@@ -40,6 +40,7 @@ mod cross_contract;
 mod crowdfund;
 mod dao;
 mod data_export;
+mod delegate;
 mod dispute;
 mod emergency;
 mod errors;
@@ -88,6 +89,7 @@ mod quadratic;
 mod rate_limit;
 mod reentrancy;
 mod referral;
+mod refund;
 mod registry;
 mod relay;
 mod reputation;
@@ -97,6 +99,7 @@ mod reviewer_pool;
 mod reviewer_reward;
 pub mod reviewer_sla;
 mod scoring;
+mod snapshot;
 mod split_payment;
 mod storage;
 mod streaming;
@@ -123,30 +126,31 @@ pub use types::{
     ComplianceStatus, ConditionResult, ContractVersion, ContributionType, ContributorPortfolio,
     ContributorRegisterPayload, CriterionStatus, CrossChainProof, CrowdfundCampaign,
     CrowdfundPledge, CrowdfundStatus, DaoProposal, DaoProposalStatus, DaoProposalType,
-    DashboardView, DecayConfig, DecayType, DexConfig, Dispute, DisputeStatus, EscrowAccount,
-    EscrowLifecycleState, EscrowMode, EscrowReleaseApproval, EscrowReleaseRequest, EscrowState,
-    EvidenceField, EvidenceFieldType, EvidenceSchema, ExportGrant, ExportGrantPage,
-    ExportMilestone, ExportMilestonePage, ExtensionRequest, ExtensionStatus, FeeRecord, ForkRecord,
-    FunderGrantSummary, FunderLedger, FunderReport, FunderTokenSummary, Grant, GrantArchetype,
-    GrantCard, GrantCategory, GrantDetailView, GrantFund, GrantPortfolio, GrantStatus,
-    GrantSummary, GrantTag, GrantTemplate, GrantVersion, HookCallResult, HookEvent,
-    HookRegistration, InsuranceClaim, InsurancePolicy, Invoice, InvoiceStatus, IpRights,
-    LicenseRecord, LicenseType, LineItem, LockupRecord, LockupStatus, MatchingAllocation,
-    MatchingContribution, MatchingRound, MerkleCommitment, MerkleProof, MigrationRecord, Milestone,
-    MilestoneDag, MilestoneDependency, MilestoneNft, MilestoneState, MilestoneSubmission,
-    MilestoneSubmitPayload, MilestoneTemplate, MultiGrantBatchResult, MultisigProposal,
-    MultisigSigner, NftMetadata, NotificationEvent, OracleConfig, ParamRecord, ParamType,
-    ParamValue, PauseRecord, PaymentSplit, PaymentStream, PerformanceBond, PortfolioFilter,
-    PortfolioStats, PriceQuote, ProtocolConfig, ProtocolMetrics, ProtocolModule, ProvenanceRecord,
-    PublicReview, PublicReviewSignal, QuadraticVoteRecord, RateLimitAction, ReferralCode,
-    ReferralRecord, ReferralReward, RegistryEntry, RegistryEntryType, RelayAllowance, RelayConfig,
-    RelayDispatch, RelayRecord, RelayableAction, ReleaseCondition, RenewalProposal, RenewalStatus,
-    ReputationTier, RevenueEpoch, ReviewParticipation, ReviewerAvailability, ReviewerProfile,
-    ReviewerRequest, ReviewerRequestStatus, ReviewerRewardPool, ReviewerRewardRecord, ReviewerView,
-    Role, RoleAssignment, RollingWindow, ScoreResult, ScoringDimension, ScoringRubric,
-    ScoringWeight, SignatureStatus, SplitRecipient, StakerEpochRecord, StructuredEvidence,
-    Subscription, SubscriptionScope, SwapResult, SwapRoute, SyndicateGrant, SyndicateMember,
-    SyndicateStatus, TemplateCategory, TimerRecord, TimerTriggerType, TokenMetric,
+    DashboardView, DecayConfig, DecayType, Delegation, DelegationScope, DexConfig, Dispute,
+    DisputeStatus, EscrowAccount, EscrowLifecycleState, EscrowMode, EscrowReleaseApproval,
+    EscrowReleaseRequest, EscrowState, EvidenceField, EvidenceFieldType, EvidenceSchema,
+    ExportGrant, ExportGrantPage, ExportMilestone, ExportMilestonePage, ExtensionRequest,
+    ExtensionStatus, FeeRecord, ForkRecord, FunderGrantSummary, FunderLedger, FunderReport,
+    FunderTokenSummary, Grant, GrantArchetype, GrantCard, GrantCategory, GrantDetailView,
+    GrantFund, GrantPortfolio, GrantStatus, GrantSummary, GrantTag, GrantTemplate, GrantVersion,
+    HookCallResult, HookEvent, HookRegistration, InsuranceClaim, InsurancePolicy, Invoice,
+    InvoiceStatus, IpRights, LicenseRecord, LicenseType, LineItem, LockupRecord, LockupStatus,
+    MatchingAllocation, MatchingContribution, MatchingRound, MerkleCommitment, MerkleProof,
+    MigrationRecord, Milestone, MilestoneDag, MilestoneDependency, MilestoneNft, MilestoneState,
+    MilestoneSubmission, MilestoneSubmitPayload, MilestoneTemplate, MultiGrantBatchResult,
+    MultisigProposal, MultisigSigner, NftMetadata, NotificationEvent, OracleConfig, ParamRecord,
+    ParamType, ParamValue, PauseRecord, PaymentSplit, PaymentStream, PerformanceBond,
+    PortfolioFilter, PortfolioStats, PriceQuote, ProtocolConfig, ProtocolMetrics, ProtocolModule,
+    ProvenanceRecord, PublicReview, PublicReviewSignal, QuadraticVoteRecord, RateLimitAction,
+    ReferralCode, ReferralRecord, ReferralReward, RefundCalculation, RefundPolicy,
+    RefundPolicyType, RegistryEntry, RegistryEntryType, RelayAllowance, RelayConfig, RelayDispatch,
+    RelayRecord, RelayableAction, ReleaseCondition, RenewalProposal, RenewalStatus, ReputationTier,
+    RevenueEpoch, ReviewParticipation, ReviewerAvailability, ReviewerProfile, ReviewerRequest,
+    ReviewerRequestStatus, ReviewerRewardPool, ReviewerRewardRecord, ReviewerView, Role,
+    RoleAssignment, RollingWindow, ScoreResult, ScoringDimension, ScoringRubric, ScoringWeight,
+    SignatureStatus, SnapshotTrigger, SplitRecipient, StakerEpochRecord, StateSnapshot,
+    StructuredEvidence, Subscription, SubscriptionScope, SwapResult, SwapRoute, SyndicateGrant,
+    SyndicateMember, SyndicateStatus, TemplateCategory, TimerRecord, TimerTriggerType, TokenMetric,
     TransferProposal, TransferableRole, TreasurySnapshot, VerificationAttestation,
     VerificationLevel, VerificationStatus, VoiceCredits, VotingMechanism, WaitlistConfig,
     WaitlistEntry, WhitelistEntry, WhitelistMode, WhitelistScope, WithdrawStreamPayload,
@@ -365,7 +369,15 @@ impl StellarGrantsContract {
 
             let total_refundable = grant.escrow_balance;
             if total_refundable > 0 {
-                escrow::refund_all(&env, grant_id)?;
+                // Issue #727: use the configured refund policy when the owner
+                // has explicitly set one, otherwise fall back to the existing
+                // flat refund-all behavior. Exactly one of these runs, so
+                // there's no double-payout.
+                if refund::has_policy(&env, grant_id) {
+                    refund::execute_refund(&env, grant_id, &caller)?;
+                } else {
+                    escrow::refund_all(&env, grant_id)?;
+                }
             }
 
             let mut grant =
@@ -668,6 +680,20 @@ impl StellarGrantsContract {
         let mut grant = Storage::get_grant_v(&env, grant_id);
         let mut milestone = Storage::get_milestone_v(&env, grant_id, milestone_idx);
 
+        // Issue #724: `reviewer` may be a delegate voting on behalf of the real
+        // reviewer. Resolve back to the delegator and burn one use of the
+        // delegation; if `reviewer` is already a registered reviewer, this is a
+        // no-op and behavior is unchanged.
+        let effective_reviewer = if grant.reviewers.contains(reviewer.clone()) {
+            reviewer.clone()
+        } else {
+            let delegator = delegate::resolve_delegator(&env, &reviewer, grant_id);
+            if delegator != reviewer {
+                delegate::consume_delegation_for_vote(&env, &delegator, &reviewer, grant_id)?;
+            }
+            delegator
+        };
+
         if approve && !checklist::all_required_approved(&env, grant_id, milestone_idx) {
             return Err(ContractError::RequiredCriteriaNotMet);
         }
@@ -676,7 +702,7 @@ impl StellarGrantsContract {
             &env,
             &mut grant,
             &mut milestone,
-            &reviewer,
+            &effective_reviewer,
             approve,
             feedback,
         )?;
@@ -688,7 +714,7 @@ impl StellarGrantsContract {
         provenance::record(
             &env,
             ContributionType::MilestoneReviewed,
-            &reviewer,
+            &effective_reviewer,
             grant_id,
             Some(milestone_idx),
             None,
@@ -696,7 +722,13 @@ impl StellarGrantsContract {
             soroban_sdk::Vec::new(&env),
         );
 
-        reviewer_reward::record_participation(&env, &reviewer, grant_id, milestone_idx, false);
+        reviewer_reward::record_participation(
+            &env,
+            &effective_reviewer,
+            grant_id,
+            milestone_idx,
+            false,
+        );
 
         if result.quorum_reached {
             // Issue #699: notify subscribers watching this grant of the vote
@@ -725,7 +757,7 @@ impl StellarGrantsContract {
                     &env,
                     grant_id,
                     AuditAction::MilestoneApproved,
-                    &reviewer,
+                    &effective_reviewer,
                     Some(milestone_idx),
                     Some(milestone.amount),
                 );
@@ -771,7 +803,7 @@ impl StellarGrantsContract {
                     &env,
                     grant_id,
                     AuditAction::MilestoneRejected,
-                    &reviewer,
+                    &effective_reviewer,
                     Some(milestone_idx),
                     None,
                 );
@@ -1801,6 +1833,8 @@ impl StellarGrantsContract {
         emergency::require_not_paused(&env)?;
         let grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
         dispute::raise_dispute(&env, &grant, milestone_idx, &caller, reason)?;
+        // Issue #726: capture a tamper-evident state snapshot when a dispute is raised.
+        snapshot::capture(&env, grant_id, SnapshotTrigger::DisputeRaised, &caller)?;
         metrics::increment(&env, MetricField::DisputesRaised, 1);
         // Issue #699: notify subscribers watching this grant.
         notification::emit_notification(
@@ -1890,7 +1924,132 @@ impl StellarGrantsContract {
         Storage::get_dispute(&env, grant_id, milestone_idx)
     }
 
+    // ── Reviewer Vote Delegation (#724) ───────────────────────────────────────
+
+    /// Delegate a reviewer's vote (globally or for a single grant) to another address.
+    pub fn delegate_vote(
+        env: Env,
+        delegator: Address,
+        delegate: Address,
+        scope: DelegationScope,
+        expires_at: Option<u64>,
+        max_uses: Option<u32>,
+    ) -> Result<(), ContractError> {
+        delegate::delegate_vote(&env, &delegator, &delegate, scope, expires_at, max_uses)
+    }
+
+    /// Revoke a previously created vote delegation.
+    pub fn revoke_delegation(
+        env: Env,
+        delegator: Address,
+        scope: DelegationScope,
+    ) -> Result<(), ContractError> {
+        delegate::revoke_delegation(&env, &delegator, &scope)
+    }
+
+    /// Fetch an active delegation for a delegator/scope pair, if one exists.
+    pub fn get_delegation(
+        env: Env,
+        delegator: Address,
+        scope: DelegationScope,
+    ) -> Option<Delegation> {
+        delegate::get_delegation(&env, &delegator, &scope)
+    }
+
+    // ── State Snapshots for Audit/Dispute Support (#726) ──────────────────────
+
+    /// Manually capture a point-in-time state snapshot of a grant.
+    pub fn snapshot_capture(
+        env: Env,
+        caller: Address,
+        grant_id: u64,
+        trigger: SnapshotTrigger,
+    ) -> Result<u32, ContractError> {
+        caller.require_auth();
+        snapshot::capture(&env, grant_id, trigger, &caller)
+    }
+
+    /// Fetch a specific state snapshot by id.
+    pub fn get_snapshot(
+        env: Env,
+        grant_id: u64,
+        snapshot_id: u32,
+    ) -> Result<StateSnapshot, ContractError> {
+        snapshot::get_snapshot(&env, grant_id, snapshot_id)
+    }
+
+    /// List all state snapshots captured for a grant.
+    pub fn list_snapshots(env: Env, grant_id: u64) -> Vec<StateSnapshot> {
+        snapshot::list_snapshots(&env, grant_id)
+    }
+
+    /// Fetch the most recent state snapshot for a grant, if any.
+    pub fn latest_snapshot(env: Env, grant_id: u64) -> Option<StateSnapshot> {
+        snapshot::latest_snapshot(&env, grant_id)
+    }
+
+    /// Diff two state snapshots and return the symbols of changed fields.
+    pub fn diff_snapshots(
+        env: Env,
+        grant_id: u64,
+        a_id: u32,
+        b_id: u32,
+    ) -> Vec<soroban_sdk::Symbol> {
+        snapshot::diff_snapshots(&env, grant_id, a_id, b_id)
+    }
+
+    // ── Configurable Refund Policies (#727) ───────────────────────────────────
+
+    /// Attach a refund policy to a grant. Owner-only; must be set before any
+    /// funds are escrowed (see `refund::set_policy`).
+    pub fn refund_set_policy(
+        env: Env,
+        owner: Address,
+        grant_id: u64,
+        policy: RefundPolicy,
+    ) -> Result<(), ContractError> {
+        refund::set_policy(&env, &owner, grant_id, policy)
+    }
+
+    /// Fetch the refund policy configured for a grant (a default FullRefund
+    /// policy if none has been explicitly set).
+    pub fn refund_get_policy(env: Env, grant_id: u64) -> RefundPolicy {
+        refund::get_policy(&env, grant_id)
+    }
+
+    /// Preview the refund/compensation split for a grant under its configured policy.
+    pub fn refund_calculate(
+        env: Env,
+        grant_id: u64,
+        canceller: Address,
+    ) -> Result<RefundCalculation, ContractError> {
+        refund::calculate_refund(&env, grant_id, &canceller)
+    }
+
+    /// Execute the configured refund policy directly. Callable by the grant
+    /// owner or global admin (mirrors `cancel_grant`'s own authorization).
+    pub fn refund_execute(
+        env: Env,
+        grant_id: u64,
+        canceller: Address,
+    ) -> Result<RefundCalculation, ContractError> {
+        canceller.require_auth();
+        let grant = Storage::get_grant(&env, grant_id).ok_or(ContractError::GrantNotFound)?;
+        let is_owner = grant.owner == canceller;
+        let is_admin = Storage::get_global_admin(&env) == Some(canceller.clone());
+        if !is_owner && !is_admin {
+            return Err(ContractError::Unauthorized);
+        }
+        refund::execute_refund(&env, grant_id, &canceller)
+    }
+
     // ── Clawback Mechanism Entry Points ───────────────────────────────────────
+    //
+    // Note: none of these wrappers call `.require_auth()` themselves — each
+    // delegates to a `clawback::*` function that already calls it internally.
+    // A duplicate `require_auth()` call for the same address at the same
+    // invocation depth trips Soroban's "frame is already authorized" auth
+    // error, so the check belongs in exactly one place (the module fn).
 
     pub fn clawback_initiate(
         env: Env,
@@ -1899,7 +2058,6 @@ impl StellarGrantsContract {
         milestone_idx: u32,
         reason: String,
     ) -> Result<(), ContractError> {
-        initiator.require_auth();
         clawback::initiate(&env, &initiator, grant_id, milestone_idx, reason)
     }
 
@@ -1909,7 +2067,6 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
-        approver.require_auth();
         clawback::approve(&env, &approver, grant_id, milestone_idx)
     }
 
@@ -1919,8 +2076,25 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
-        contributor.require_auth();
         clawback::dispute(&env, &contributor, grant_id, milestone_idx)
+    }
+
+    pub fn clawback_authorize_pull(
+        env: Env,
+        contributor: Address,
+        grant_id: u64,
+        token: Address,
+        amount: i128,
+        live_until_ledger: u32,
+    ) -> Result<(), ContractError> {
+        clawback::authorize_pull(
+            &env,
+            &contributor,
+            grant_id,
+            &token,
+            amount,
+            live_until_ledger,
+        )
     }
 
     pub fn clawback_execute(
@@ -1929,7 +2103,6 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<i128, ContractError> {
-        caller.require_auth();
         clawback::execute(&env, &caller, grant_id, milestone_idx)
     }
 
@@ -1939,7 +2112,6 @@ impl StellarGrantsContract {
         grant_id: u64,
         milestone_idx: u32,
     ) -> Result<(), ContractError> {
-        admin.require_auth();
         clawback::cancel(&env, &admin, grant_id, milestone_idx)
     }
 
@@ -4677,6 +4849,9 @@ fn apply_milestone_submission(
         &SubscriptionScope::PerGrant(grant_id),
         reviewer_sla::milestone_sla_id(grant_id, milestone_idx) as u128,
     );
+
+    // Issue #726: capture a tamper-evident state snapshot on every submission.
+    snapshot::capture(env, grant_id, SnapshotTrigger::MilestoneSubmission, actor)?;
 
     audit::log(
         env,

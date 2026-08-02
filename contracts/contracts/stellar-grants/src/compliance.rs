@@ -144,7 +144,20 @@ pub fn is_valid(env: &Env, attestation: &ComplianceAttestation) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Address, Env};
+    use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env};
+
+    fn set_ledger(env: &Env, sequence: u32, timestamp: u64) {
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+            timestamp,
+            protocol_version: 21,
+            sequence_number: sequence,
+            base_reserve: 10,
+            network_id: Default::default(),
+            min_temp_entry_ttl: 100_000,
+            min_persistent_entry_ttl: 100_000,
+            max_entry_ttl: 1_000_000,
+        });
+    }
 
     fn setup() -> (Env, Address, Address) {
         let env = Env::default();
@@ -382,7 +395,7 @@ mod tests {
     #[test]
     fn attest_records_timestamps() {
         let (env, _, verifier) = setup();
-        env.ledger().set(1, 100);
+        set_ledger(&env, 1, 100);
         let subj = Address::generate(&env);
         let jurisdiction = soroban_sdk::String::from_str(&env, "US");
         attest(
@@ -568,7 +581,7 @@ mod tests {
         )
         .unwrap();
         // Advance past expiry
-        env.ledger().set(1, 101);
+        set_ledger(&env, 1, 101);
         assert_eq!(
             require_compliant(&env, &subj, ComplianceLevel::Basic),
             Err(ContractError::ComplianceCheckFailed)
@@ -590,7 +603,7 @@ mod tests {
             jurisdiction,
         )
         .unwrap();
-        env.ledger().set(1, 199);
+        set_ledger(&env, 1, 199);
         require_compliant(&env, &subj, ComplianceLevel::Basic).unwrap();
     }
 
@@ -631,7 +644,7 @@ mod tests {
         )
         .unwrap();
         // Even far in the future, zero expiry means never expires
-        env.ledger().set(1, 999_999);
+        set_ledger(&env, 1, 999_999);
         require_compliant(&env, &subj, ComplianceLevel::Standard).unwrap();
     }
 
@@ -712,7 +725,7 @@ mod tests {
     #[test]
     fn is_valid_approved_not_expired() {
         let env = Env::default();
-        env.ledger().set(1, 50);
+        set_ledger(&env, 1, 50);
         let att = ComplianceAttestation {
             subject: Address::generate(&env),
             status: ComplianceStatus::Approved,
@@ -758,7 +771,7 @@ mod tests {
     #[test]
     fn is_valid_past_expiry_time() {
         let env = Env::default();
-        env.ledger().set(1, 200);
+        set_ledger(&env, 1, 200);
         let att = ComplianceAttestation {
             subject: Address::generate(&env),
             status: ComplianceStatus::Approved,
@@ -774,7 +787,7 @@ mod tests {
     #[test]
     fn is_valid_zero_expiry_never_expires() {
         let env = Env::default();
-        env.ledger().set(1, 999_999);
+        set_ledger(&env, 1, 999_999);
         let att = ComplianceAttestation {
             subject: Address::generate(&env),
             status: ComplianceStatus::Approved,

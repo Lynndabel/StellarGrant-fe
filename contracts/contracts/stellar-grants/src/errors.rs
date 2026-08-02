@@ -187,6 +187,10 @@ pub enum ContractError {
     DaoVoteRequired = 145,
     // Token swap (#683): no real DEX integration exists yet
     SwapNotImplemented = 146,
-    // Public review (#590): cap on reviews per milestone
+    // Public review (#590): open_review::submit_review enforces
+    // MAX_PUBLIC_REVIEWS_PER_MILESTONE and needs this variant to report it.
     TooManyPublicReviews = 147,
+    // Clawback (#685): execute() now pulls funds via a pre-authorized SEP-41
+    // allowance instead of assuming the target signs the transfer.
+    InsufficientClawbackAllowance = 148,
 }

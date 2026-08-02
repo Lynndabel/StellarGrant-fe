@@ -288,10 +288,7 @@ mod tests {
         attach_lockup(&env, &owner, 1, 0, 500).unwrap();
         let record = get_lockup(&env, 1, 0).unwrap();
         assert_eq!(record.unlocks_at, 1500);
-        assert_eq!(
-            record.token,
-            env.as_contract(&|| Storage::get_grant(&env, 1).unwrap().token)
-        );
+        assert_eq!(record.token, Storage::get_grant(&env, 1).unwrap().token);
     }
 
     #[test]

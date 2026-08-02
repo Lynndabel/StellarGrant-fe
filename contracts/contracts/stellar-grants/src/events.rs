@@ -263,6 +263,17 @@ pub struct ClawbackCancelled {
     pub timestamp: u64,
 }
 
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClawbackAllowanceAuthorized {
+    pub grant_id: u64,
+    pub contributor: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub live_until_ledger: u32,
+    pub timestamp: u64,
+}
+
 // ── Issue #135: Machine-readable receipts ───────────────────────────────────────
 
 #[contractevent]
@@ -806,6 +817,25 @@ impl Events {
             grant_id,
             milestone_idx,
             cancelled_by,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_clawback_allowance_authorized(
+        env: &Env,
+        grant_id: u64,
+        contributor: Address,
+        token: Address,
+        amount: i128,
+        live_until_ledger: u32,
+    ) {
+        let event = ClawbackAllowanceAuthorized {
+            grant_id,
+            contributor,
+            token,
+            amount,
+            live_until_ledger,
             timestamp: env.ledger().timestamp(),
         };
         event.publish(env);
