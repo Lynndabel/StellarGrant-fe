@@ -7,6 +7,27 @@ use crate::reviewer_sla;
 use crate::storage::Storage;
 use crate::types::{ContractError, Grant, Milestone, MilestoneState, VotingMechanism};
 
+/// Transition every `Approved` milestone on a grant to `Paid`. Call this only
+/// once the grant's payout path has actually confirmed the fund transfer for
+/// those milestones (see `StellarGrantsContract::finalize_grant_release` and
+/// `execute_escrow_release` in lib.rs) — `Approved` alone does not mean the
+/// funds moved, since a multisig-gated release can leave a milestone
+/// `Approved` for a time after quorum but before the transfer executes.
+/// Read paths (`portfolio::earnings_by_token`, `data_export`) only count
+/// `Paid` milestones as earned/paid-out, so skipping this step after a real
+/// payout silently zeroes a contributor's reported earnings (issue #696).
+pub fn mark_milestones_paid(env: &Env, grant_id: u64, total_milestones: u32) {
+    for idx in 0..total_milestones {
+        if let Some(mut milestone) = Storage::get_milestone(env, grant_id, idx) {
+            if milestone.state == MilestoneState::Approved {
+                milestone.state = MilestoneState::Paid;
+                Storage::set_milestone(env, grant_id, idx, &milestone);
+                Events::emit_milestone_paid(env, grant_id, idx, milestone.amount);
+            }
+        }
+    }
+}
+
 pub struct VoteResult {
     pub approved: bool,
     pub quorum_reached: bool,

@@ -90,7 +90,9 @@ pub fn export_milestones(env: &Env, grant_id: u64) -> Vec<ExportMilestone> {
             } else {
                 None
             };
-            let approved_at = if milestone.state == crate::types::MilestoneState::Approved {
+            let approved_at = if milestone.state == crate::types::MilestoneState::Approved
+                || milestone.state == crate::types::MilestoneState::Paid
+            {
                 Some(milestone.status_updated_at)
             } else {
                 None

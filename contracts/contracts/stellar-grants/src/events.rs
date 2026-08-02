@@ -11,6 +11,16 @@ pub struct GrantCancelled {
     pub timestamp: u64,
 }
 
+/// Issue #698: emitted instead of silently dropping the entry when a
+/// `grant_index` list (per-owner, per-status, per-token, or the global
+/// recency order) has already reached `MAX_INDEX_ENTRIES`.
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IndexCapReached {
+    pub grant_id: u64,
+    pub timestamp: u64,
+}
+
 #[contractevent]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RefundExecuted {
@@ -449,6 +459,14 @@ impl Events {
             owner,
             reason,
             refund_amount,
+            timestamp: env.ledger().timestamp(),
+        };
+        event.publish(env);
+    }
+
+    pub fn emit_index_cap_reached(env: &Env, grant_id: u64) {
+        let event = IndexCapReached {
+            grant_id,
             timestamp: env.ledger().timestamp(),
         };
         event.publish(env);
