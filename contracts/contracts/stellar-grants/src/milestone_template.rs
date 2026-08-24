@@ -13,6 +13,10 @@ pub fn save_template(
 ) -> Result<u64, ContractError> {
     owner.require_auth();
 
+    if default_amount_pct == 0 || default_amount_pct > 100 {
+        return Err(ContractError::InvalidInput);
+    }
+
     let id_key = DataKey::TemplateCounter;
     let mut id: u64 = env.storage().persistent().get(&id_key).unwrap_or(0);
     id += 1;
@@ -67,7 +71,11 @@ pub fn create_from_templates(
             .persistent()
             .set(&DataKey::MilestoneTemplate(id), &template);
 
-        let amount = (total_amount * (template.default_amount_pct as i128)) / 100;
+        let amount = total_amount
+            .checked_mul(template.default_amount_pct as i128)
+            .ok_or(ContractError::InvalidInput)?
+            .checked_div(100)
+            .ok_or(ContractError::InvalidInput)?;
         results.push_back((template.description.clone(), amount));
     }
 

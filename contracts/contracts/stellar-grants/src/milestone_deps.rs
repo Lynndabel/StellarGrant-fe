@@ -26,11 +26,15 @@ pub fn can_submit(env: &Env, grant_id: u64, milestone_idx: u32) -> Result<(), Co
 /// reference valid milestone indices and stores the graph.
 pub fn attach_dag(
     env: &Env,
-    _owner: &Address,
+    owner: &Address,
     grant_id: u64,
     deps: SorobanVec<MilestoneDependency>,
 ) -> Result<(), ContractError> {
+    owner.require_auth();
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    if grant.owner != *owner {
+        return Err(ContractError::Unauthorized);
+    }
 
     for dep in deps.iter() {
         if dep.milestone_idx >= grant.total_milestones {

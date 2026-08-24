@@ -178,6 +178,7 @@ pub enum MatchingKey {
     Contribution(u32, Address, u64),
     Pool(u32),
     Counter,
+    GrantContributors(u32, u64),
 }
 
 #[contracttype]

@@ -5,6 +5,8 @@ use crate::escrow;
 use crate::storage::Storage;
 use crate::types::{FunderGrantSummary, FunderReport, FunderTokenSummary, GrantStatus};
 
+const MAX_GRANTS_TO_SCAN: u64 = 1_000;
+
 /// Fetch every grant summary for a funder, regardless of how many grants
 /// they've contributed to. `grant_summaries` itself supports offset/limit
 /// pagination, but the report/summary/dashboard functions below used to
@@ -131,7 +133,7 @@ pub fn grant_summaries(
 
     // Since we don't have a direct reverse index, we use a pragmatic approach:
     // Look at each grant the funder contributed to by checking funder ledger.
-    // This is a read-only query, so we accept O(num_grants) iteration.
+    // Cap the scan to avoid unbounded resource consumption.
 
     // Get the grant ids from the contributor's grant index as a starting point
     // if the funder is also a contributor, or iterate through all escrow accounts.
@@ -142,9 +144,10 @@ pub fn grant_summaries(
     // Better approach: use the FunderGrantIndex if available in storage,
     // or just scan through grant ids from 1 to a reasonable counter.
     let grant_count = Storage::get_grant_counter(env);
+    let scan_limit = core::cmp::min(MAX_GRANTS_TO_SCAN, grant_count);
     let mut collected: u32 = 0;
 
-    for id in 1..=grant_count {
+    for id in 1..=scan_limit {
         if collected >= offset + limit {
             break;
         }
