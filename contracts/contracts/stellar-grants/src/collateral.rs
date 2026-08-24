@@ -73,7 +73,24 @@ pub fn deposit(env: &Env, contributor: &Address, grant_id: u64) -> Result<(), Co
 }
 
 /// Release collateral back to contributor on grant completion.
-pub fn release(env: &Env, grant_id: u64, contributor: &Address) -> Result<i128, ContractError> {
+pub fn release(
+    env: &Env,
+    caller: &Address,
+    grant_id: u64,
+    contributor: &Address,
+) -> Result<i128, ContractError> {
+    caller.require_auth();
+    let admin = Storage::get_global_admin(env).ok_or(ContractError::Unauthorized)?;
+    let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    if *caller != admin && *caller != grant.owner {
+        return Err(ContractError::Unauthorized);
+    }
+
+    use crate::types::GrantStatus;
+    if grant.status != GrantStatus::Completed {
+        return Err(ContractError::InvalidState);
+    }
+
     crate::reentrancy::protect(env)?;
     let mut deposit = Storage::get_collateral_deposit(env, grant_id, contributor)
         .ok_or(ContractError::InvalidState)?;
@@ -106,11 +123,19 @@ pub fn release(env: &Env, grant_id: u64, contributor: &Address) -> Result<i128, 
 /// Forfeit a portion of collateral (called by dispute or abandon logic).
 pub fn forfeit(
     env: &Env,
+    caller: &Address,
     grant_id: u64,
     contributor: &Address,
     forfeit_bps: u32,
     reason: String,
 ) -> Result<i128, ContractError> {
+    caller.require_auth();
+    let admin = Storage::get_global_admin(env).ok_or(ContractError::Unauthorized)?;
+    let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
+    if *caller != admin && *caller != grant.owner {
+        return Err(ContractError::Unauthorized);
+    }
+
     crate::reentrancy::protect(env)?;
     if forfeit_bps > 10_000 {
         return Err(ContractError::InvalidInput);
@@ -331,6 +356,11 @@ mod tests {
         env.mock_all_auths();
         let contributor = Address::generate(&env);
         let token = Address::generate(&env);
+        let owner = Address::generate(&env);
+
+        // Manually set up a grant
+        let grant = make_grant(&env, &owner);
+        Storage::set_grant(&env, 1, &grant);
 
         // Manually set up a deposit.
         let deposit = CollateralDeposit {
@@ -349,7 +379,7 @@ mod tests {
 
         let reason = soroban_sdk::String::from_str(&env, "dispute lost");
         // 2000 bps = 20% of 1000 = 200
-        let result = forfeit(&env, 1, &contributor, 2000, reason.clone());
+        let result = forfeit(&env, &owner, 1, &contributor, 2000, reason.clone());
         assert_eq!(result.unwrap(), 200);
 
         let updated = get_deposit(&env, 1, &contributor).unwrap();
@@ -363,6 +393,11 @@ mod tests {
         env.mock_all_auths();
         let contributor = Address::generate(&env);
         let token = Address::generate(&env);
+        let owner = Address::generate(&env);
+
+        // Manually set up a grant
+        let grant = make_grant(&env, &owner);
+        Storage::set_grant(&env, 1, &grant);
 
         let deposit = CollateralDeposit {
             grant_id: 1,
@@ -379,7 +414,7 @@ mod tests {
         Storage::set_treasury(&env, &Address::generate(&env));
 
         let reason = soroban_sdk::String::from_str(&env, "abandoned");
-        let result = forfeit(&env, 1, &contributor, 10000, reason.clone());
+        let result = forfeit(&env, &owner, 1, &contributor, 10000, reason.clone());
         assert_eq!(result.unwrap(), 1000);
 
         let updated = get_deposit(&env, 1, &contributor).unwrap();

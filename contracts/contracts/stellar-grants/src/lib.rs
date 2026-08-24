@@ -360,6 +360,7 @@ impl StellarGrantsContract {
                 let forfeit_reason = String::from_str(&env, "grant cancelled by owner");
                 let _ = collateral::forfeit(
                     &env,
+                    &caller,
                     grant_id,
                     &grant.owner,
                     req.forfeit_on_abandon_bps,
@@ -645,7 +646,9 @@ impl StellarGrantsContract {
         performance_bond::release_bond(env, grant_id)?;
 
         // Issue #564: release any collateral deposit back to the contributor.
-        let _ = collateral::release(env, grant_id, &grant.owner);
+        let admin = Storage::get_global_admin(env);
+        let caller = admin.as_ref().unwrap_or(&grant.owner).clone();
+        let _ = collateral::release(env, &caller, grant_id, &grant.owner);
 
         Events::emit_grant_completed(env, grant_id, total_paid, remaining_balance);
         // Emit PayeeReceipt for grant completion as final summary snapshot
@@ -1897,6 +1900,7 @@ impl StellarGrantsContract {
                 let reason = String::from_str(&env, "dispute lost");
                 let _ = collateral::forfeit(
                     &env,
+                    &caller,
                     grant_id,
                     &grant.owner,
                     req.forfeit_on_dispute_loss_bps,
@@ -4341,21 +4345,23 @@ impl StellarGrantsContract {
     /// Release collateral back to contributor on grant completion.
     pub fn collateral_release(
         env: Env,
+        caller: Address,
         grant_id: u64,
         contributor: Address,
     ) -> Result<i128, ContractError> {
-        collateral::release(&env, grant_id, &contributor)
+        collateral::release(&env, &caller, grant_id, &contributor)
     }
 
     /// Forfeit a portion of collateral (called by dispute or abandon logic).
     pub fn collateral_forfeit(
         env: Env,
+        caller: Address,
         grant_id: u64,
         contributor: Address,
         forfeit_bps: u32,
         reason: String,
     ) -> Result<i128, ContractError> {
-        collateral::forfeit(&env, grant_id, &contributor, forfeit_bps, reason)
+        collateral::forfeit(&env, &caller, grant_id, &contributor, forfeit_bps, reason)
     }
 
     /// Return collateral deposit for a contributor.
