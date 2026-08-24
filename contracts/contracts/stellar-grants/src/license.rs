@@ -1,5 +1,5 @@
 use crate::storage::Storage;
-use crate::types::{ContractError, IpRights, LicenseRecord, LicenseType};
+use crate::types::{ContractError, IpRights, LicenseRecord, LicenseType, MilestoneState};
 use soroban_sdk::{Address, Env, String};
 
 /// Attach a license record to an approved milestone deliverable.
@@ -23,7 +23,11 @@ pub fn attach_license(
     if milestone_idx >= grant.total_milestones {
         return Err(ContractError::MilestoneIndexOutOfBounds);
     }
-    Storage::get_milestone(env, grant_id, milestone_idx).ok_or(ContractError::MilestoneNotFound)?;
+    let milestone = Storage::get_milestone(env, grant_id, milestone_idx)
+        .ok_or(ContractError::MilestoneNotFound)?;
+    if milestone.state != MilestoneState::Approved {
+        return Err(ContractError::InvalidState);
+    }
 
     let record = LicenseRecord {
         grant_id,
@@ -96,6 +100,18 @@ mod tests {
             deadline: None,
             reviewer_count_snapshot: 1,
         };
+        Storage::set_milestone(env, grant_id, 0, &milestone);
+    }
+
+    fn create_grant_with_milestone_in_state(
+        env: &Env,
+        owner: &Address,
+        grant_id: u64,
+        state: MilestoneState,
+    ) {
+        create_grant_with_milestone(env, owner, grant_id);
+        let mut milestone = Storage::get_milestone(env, grant_id, 0).unwrap();
+        milestone.state = state;
         Storage::set_milestone(env, grant_id, 0, &milestone);
     }
 
@@ -190,6 +206,58 @@ mod tests {
             String::from_str(&env, ""),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_attach_license_rejects_pending_milestone() {
+        let (env, owner, _) = setup();
+        create_grant_with_milestone_in_state(&env, &owner, 1, MilestoneState::Pending);
+
+        let rights = IpRights {
+            commercial_use: false,
+            modification: false,
+            distribution: false,
+            sublicense: false,
+        };
+
+        let result = attach_license(
+            &env,
+            &owner,
+            1,
+            0,
+            String::from_str(&env, "MIT"),
+            LicenseType::OpenSource,
+            rights,
+            String::from_str(&env, ""),
+        );
+
+        assert_eq!(result, Err(ContractError::InvalidState));
+    }
+
+    #[test]
+    fn test_attach_license_rejects_rejected_milestone() {
+        let (env, owner, _) = setup();
+        create_grant_with_milestone_in_state(&env, &owner, 1, MilestoneState::Rejected);
+
+        let rights = IpRights {
+            commercial_use: false,
+            modification: false,
+            distribution: false,
+            sublicense: false,
+        };
+
+        let result = attach_license(
+            &env,
+            &owner,
+            1,
+            0,
+            String::from_str(&env, "MIT"),
+            LicenseType::OpenSource,
+            rights,
+            String::from_str(&env, ""),
+        );
+
+        assert_eq!(result, Err(ContractError::InvalidState));
     }
 
     #[test]
