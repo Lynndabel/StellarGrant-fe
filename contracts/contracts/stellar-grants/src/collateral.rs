@@ -170,18 +170,6 @@ pub fn forfeit(
         forfeited_amount
     };
 
-    if actual_forfeit > 0 {
-        // Send forfeited amount to treasury.
-        let treasury_addr =
-            Storage::get_treasury(env).ok_or(ContractError::TreasuryNotConfigured)?;
-        let token_client = token::Client::new(env, &deposit.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &treasury_addr,
-            &actual_forfeit,
-        );
-    }
-
     deposit.forfeited_amount = deposit
         .forfeited_amount
         .checked_add(actual_forfeit)
@@ -194,7 +182,23 @@ pub fn forfeit(
         deposit.status = CollateralStatus::PartiallyForfeited;
     }
 
+    // Persist state before external transfer (checks-effects-interactions pattern).
     Storage::set_collateral_deposit(env, grant_id, contributor, &deposit);
+
+    if actual_forfeit > 0 {
+        // Send forfeited amount to treasury, protected against reentrancy.
+        let treasury_addr =
+            Storage::get_treasury(env).ok_or(ContractError::TreasuryNotConfigured)?;
+        let token_client = token::Client::new(env, &deposit.token);
+        crate::reentrancy::protect_external_call(env, || {
+            token_client.transfer(
+                &env.current_contract_address(),
+                &treasury_addr,
+                &actual_forfeit,
+            );
+            Ok(())
+        })?;
+    }
 
     Events::emit_collateral_forfeited(env, grant_id, contributor.clone(), actual_forfeit, reason);
 

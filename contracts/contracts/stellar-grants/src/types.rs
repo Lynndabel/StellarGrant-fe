@@ -2122,6 +2122,7 @@ pub struct ArbitrationCase {
     pub finalized: bool,
     pub assigned_at: u64,
     pub deadline: u64,
+    pub panel_stakes: Vec<i128>, // Snapshot of each panelist's stake at finalization time
 }
 
 // ── Issue #574: Surety Bonds for High-Value Grant Delivery ───────────────────
