@@ -1360,6 +1360,7 @@ pub enum RateLimitAction {
     ContributorRegister = 2,
     DisputeRaise = 3,
     BountyCreate = 4,
+    WaitlistJoin = 5,
 }
 
 #[contracttype]

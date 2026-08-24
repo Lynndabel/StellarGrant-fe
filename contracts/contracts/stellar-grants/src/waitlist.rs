@@ -1,6 +1,7 @@
 use crate::events::Events;
+use crate::rate_limit;
 use crate::storage::Storage;
-use crate::types::{ContractError, WaitlistConfig, WaitlistEntry};
+use crate::types::{ContractError, RateLimitAction, WaitlistConfig, WaitlistEntry};
 use soroban_sdk::{Address, Env, String, Vec};
 
 /// Configure the waitlist for a grant. Owner only.
@@ -25,6 +26,7 @@ pub fn configure(
 /// Join the waitlist for a grant. Returns the position (1-indexed).
 pub fn join(env: &Env, applicant: &Address, grant_id: u64) -> Result<u32, ContractError> {
     applicant.require_auth();
+    rate_limit::check_and_increment(env, applicant, RateLimitAction::WaitlistJoin)?;
 
     let config = Storage::get_waitlist_config(env, grant_id).ok_or(ContractError::InvalidInput)?;
 
