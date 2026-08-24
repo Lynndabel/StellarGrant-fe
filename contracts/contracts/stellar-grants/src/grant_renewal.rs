@@ -51,6 +51,11 @@ pub fn approve_renewal(
 ) -> Result<RenewalStatus, ContractError> {
     reviewer.require_auth();
 
+    let grant = Storage::get_grant_v(env, original_grant_id);
+    if !grant.reviewers.contains(reviewer.clone()) {
+        return Err(ContractError::Unauthorized);
+    }
+
     let mut proposal =
         Storage::get_renewal_proposal(env, original_grant_id).ok_or(ContractError::InvalidState)?;
 
@@ -62,7 +67,10 @@ pub fn approve_renewal(
         return Err(ContractError::InvalidState);
     }
 
-    proposal.reviewer_votes += 1;
+    proposal.reviewer_votes = proposal
+        .reviewer_votes
+        .checked_add(1)
+        .ok_or(ContractError::InvalidInput)?;
     proposal.status = RenewalStatus::ReviewerApproved;
     Storage::set_renewal_proposal(env, &proposal);
     Ok(proposal.status)
