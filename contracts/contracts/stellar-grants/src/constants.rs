@@ -120,6 +120,8 @@ pub const RATE_LIMIT_DISPUTE_RAISE_MAX: u32 = 2;
 pub const RATE_LIMIT_DISPUTE_RAISE_WINDOW: u64 = 86_400;
 pub const RATE_LIMIT_BOUNTY_CREATE_MAX: u32 = 5;
 pub const RATE_LIMIT_BOUNTY_CREATE_WINDOW: u64 = 3_600;
+pub const RATE_LIMIT_WAITLIST_JOIN_MAX: u32 = 5;
+pub const RATE_LIMIT_WAITLIST_JOIN_WINDOW: u64 = 3_600;
 
 // ── Issue #580: Notification subscriptions ───────────────────────────────────
 pub const MAX_SUBSCRIPTIONS_PER_ADDRESS: u32 = 50;
