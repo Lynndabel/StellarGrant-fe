@@ -66,9 +66,12 @@ impl Storage {
     }
 
     pub fn get_grant(env: &Env, grant_id: u64) -> Option<Grant> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Grant(GrantKey::Data(grant_id)))
+        let key = DataKey::Grant(GrantKey::Data(grant_id));
+        let result = env.storage().persistent().get(&key);
+        if result.is_some() {
+            Self::bump(env, &key);
+        }
+        result
     }
 
     pub fn get_grant_v(env: &Env, grant_id: u64) -> Grant {
@@ -78,9 +81,9 @@ impl Storage {
     }
 
     pub fn set_grant(env: &Env, grant_id: u64, grant: &Grant) {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Grant(GrantKey::Data(grant_id)), grant);
+        let key = DataKey::Grant(GrantKey::Data(grant_id));
+        env.storage().persistent().set(&key, grant);
+        Self::bump(env, &key);
     }
 
     pub fn has_grant(env: &Env, grant_id: u64) -> bool {
@@ -2399,7 +2402,10 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Env};
+    use soroban_sdk::{
+        testutils::{storage::Persistent as _, Address as _, Ledger as _},
+        Env,
+    };
 
     #[test]
     fn test_global_admin_roundtrip() {
@@ -2465,6 +2471,66 @@ mod tests {
         let loaded = Storage::get_grant(&env, 1).unwrap();
         assert_eq!(loaded.owner, owner);
         assert_eq!(loaded.total_milestones, 3);
+    }
+
+    fn advance_ledger_sequence(env: &Env, by: u32) {
+        env.ledger().with_mut(|li| {
+            li.sequence_number += by;
+            li.max_entry_ttl = li.max_entry_ttl.max(PERSISTENT_TTL_EXTEND_TO * 2);
+        });
+    }
+
+    #[test]
+    fn test_get_and_set_grant_extend_ttl() {
+        let env = Env::default();
+        let contract_id = env.register(crate::StellarGrantsContract, ());
+        advance_ledger_sequence(&env, 0);
+
+        let owner = Address::generate(&env);
+        let grant = crate::types::Grant {
+            id: 1,
+            owner: owner.clone(),
+            title: soroban_sdk::String::from_str(&env, "Test Grant"),
+            description: soroban_sdk::String::from_str(&env, "Test"),
+            token: Address::generate(&env),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 0,
+            milestone_amount: 0,
+            reviewers: soroban_sdk::Vec::new(&env),
+            total_milestones: 3,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: soroban_sdk::Vec::new(&env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        };
+        let key = DataKey::Grant(GrantKey::Data(1));
+
+        // A write extends the TTL out to PERSISTENT_TTL_EXTEND_TO.
+        env.as_contract(&contract_id, || {
+            Storage::set_grant(&env, 1, &grant);
+        });
+        let ttl_after_set =
+            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+        assert!(ttl_after_set >= PERSISTENT_TTL_THRESHOLD);
+
+        // Let the TTL decay below the bump threshold.
+        advance_ledger_sequence(
+            &env,
+            PERSISTENT_TTL_EXTEND_TO - PERSISTENT_TTL_THRESHOLD / 2,
+        );
+        let ttl_before_get =
+            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+        assert!(ttl_before_get < PERSISTENT_TTL_THRESHOLD);
+
+        // A read re-extends the TTL back out.
+        let loaded = env.as_contract(&contract_id, || Storage::get_grant(&env, 1));
+        assert!(loaded.is_some());
+        let ttl_after_get =
+            env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+        assert!(ttl_after_get >= PERSISTENT_TTL_THRESHOLD);
+        assert!(ttl_after_get > ttl_before_get);
     }
 
     #[test]
