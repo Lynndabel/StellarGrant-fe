@@ -3936,11 +3936,13 @@ impl StellarGrantsContract {
 
     pub fn record_payout_allocation(
         env: Env,
+        caller: Address,
         grant_id: u64,
         milestone_idx: u32,
         payout: i128,
     ) -> Result<(), ContractError> {
-        syndication::record_payout_allocation(&env, grant_id, milestone_idx, payout)
+        caller.require_auth();
+        syndication::record_payout_allocation(&env, &caller, grant_id, milestone_idx, payout)
     }
 
     pub fn withdraw_syndicate(
