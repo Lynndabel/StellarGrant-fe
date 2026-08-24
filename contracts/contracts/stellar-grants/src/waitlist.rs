@@ -194,10 +194,13 @@ pub fn position_of(env: &Env, applicant: &Address, grant_id: u64) -> Option<u32>
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+
     use super::*;
     use crate::StellarGrantsContract;
     use soroban_sdk::testutils::{Address as _, Ledger as _};
     use soroban_sdk::{Address, String};
+    use std::boxed::Box;
 
     /// Register the contract and return its address so tests can wrap
     /// storage-touching calls in `env.as_contract(&contract_id, || { ... })`
@@ -503,5 +506,111 @@ mod tests {
             let other = Address::generate(&env);
             assert_eq!(position_of(&env, &other, grant_id), None);
         });
+    }
+
+    /// `require_auth()` fails by panicking (a host trap), not by returning
+    /// an `Err`, so an unauthorized call must be caught with
+    /// `catch_unwind` rather than matched on a `Result`.
+    fn panics(f: impl FnOnce() + std::panic::UnwindSafe) -> bool {
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let result = std::panic::catch_unwind(f);
+        std::panic::set_hook(prev_hook);
+        result.is_err()
+    }
+
+    #[test]
+    fn test_configure_requires_owner_auth() {
+        // A stranger cannot reconfigure another owner's waitlist merely by
+        // passing the owner's address as a parameter: without mock_all_auths,
+        // owner.require_auth() has nothing authorizing it and the call panics.
+        let env = Env::default();
+        let contract_id = register(&env);
+
+        let owner = Address::generate(&env);
+        let grant_id = 1;
+        let config = WaitlistConfig {
+            grant_id,
+            max_slots: 2,
+            max_waitlist_size: 10,
+            rank_by_reputation: false,
+            auto_promote: true,
+        };
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+        });
+
+        assert!(panics(std::panic::AssertUnwindSafe(|| {
+            env.as_contract(&contract_id, || {
+                configure(&env, &owner, grant_id, config).unwrap();
+            });
+        })));
+    }
+
+    #[test]
+    fn test_join_requires_applicant_auth() {
+        // A third party cannot enroll an arbitrary address onto a waitlist:
+        // join() requires the applicant's own authorization, which is absent
+        // here since mock_all_auths was never called.
+        let env = Env::default();
+        let contract_id = register(&env);
+
+        let owner = Address::generate(&env);
+        let applicant = Address::generate(&env);
+        let grant_id = 1;
+        let config = WaitlistConfig {
+            grant_id,
+            max_slots: 2,
+            max_waitlist_size: 10,
+            rank_by_reputation: false,
+            auto_promote: true,
+        };
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            Storage::set_waitlist_config(&env, grant_id, &config);
+            setup_contributor(&env, &applicant, 500);
+        });
+
+        assert!(panics(std::panic::AssertUnwindSafe(|| {
+            env.as_contract(&contract_id, || {
+                join(&env, &applicant, grant_id).unwrap();
+            });
+        })));
+    }
+
+    #[test]
+    fn test_leave_requires_applicant_auth() {
+        // A third party cannot remove an arbitrary address from a waitlist:
+        // leave() requires the applicant's own authorization. Seed the
+        // waitlist entry directly via storage (bypassing join(), which would
+        // itself need mocked auth) so the only auth check under test is
+        // leave()'s own applicant.require_auth().
+        let env = Env::default();
+        let contract_id = register(&env);
+
+        let applicant = Address::generate(&env);
+        let grant_id = 1;
+
+        env.as_contract(&contract_id, || {
+            let mut entries = Vec::new(&env);
+            entries.push_back(WaitlistEntry {
+                applicant: applicant.clone(),
+                grant_id,
+                joined_at: 0,
+                reputation_snapshot: 500,
+                position: 1,
+                promoted: false,
+                promoted_at: None,
+            });
+            Storage::set_waitlist_entries(&env, grant_id, &entries);
+        });
+
+        assert!(panics(std::panic::AssertUnwindSafe(|| {
+            env.as_contract(&contract_id, || {
+                leave(&env, &applicant, grant_id).unwrap();
+            });
+        })));
     }
 }
