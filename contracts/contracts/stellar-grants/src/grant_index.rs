@@ -185,6 +185,8 @@ mod tests {
     use super::*;
     use soroban_sdk::testutils::Events as _;
     use soroban_sdk::Env;
+    extern crate std;
+    use std::format;
 
     /// Issue #698: hitting the cap used to be a silent no-op — the id was
     /// dropped with no error and no event. A reduced cap (3, instead of the
