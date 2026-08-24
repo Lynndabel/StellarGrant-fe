@@ -10,6 +10,8 @@ pub fn configure(
     grant_id: u64,
     config: WaitlistConfig,
 ) -> Result<(), ContractError> {
+    owner.require_auth();
+
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
 
     if grant.owner != *owner {
@@ -22,6 +24,8 @@ pub fn configure(
 
 /// Join the waitlist for a grant. Returns the position (1-indexed).
 pub fn join(env: &Env, applicant: &Address, grant_id: u64) -> Result<u32, ContractError> {
+    applicant.require_auth();
+
     let config = Storage::get_waitlist_config(env, grant_id).ok_or(ContractError::InvalidInput)?;
 
     let mut entries = Storage::get_waitlist_entries(env, grant_id);
@@ -100,6 +104,8 @@ pub fn join(env: &Env, applicant: &Address, grant_id: u64) -> Result<u32, Contra
 
 /// Leave the waitlist voluntarily.
 pub fn leave(env: &Env, applicant: &Address, grant_id: u64) -> Result<(), ContractError> {
+    applicant.require_auth();
+
     let mut entries = Storage::get_waitlist_entries(env, grant_id);
 
     let mut found_idx = None;
