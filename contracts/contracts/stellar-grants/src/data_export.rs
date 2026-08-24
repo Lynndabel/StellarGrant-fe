@@ -4,6 +4,8 @@ use crate::constants;
 use crate::storage::{DataKey, GrantKey, Storage};
 use crate::types::{ExportGrant, ExportGrantPage, ExportMilestone, ExportMilestonePage};
 
+const MAX_GRANTS_PER_SCAN: u32 = 1_000;
+
 fn cap_limit(limit: u32) -> u32 {
     if limit > constants::MAX_EXPORT_PAGE_SIZE {
         constants::MAX_EXPORT_PAGE_SIZE
@@ -27,9 +29,13 @@ pub fn export_grants(
         .get(&global_order_key)
         .unwrap_or_else(|| Vec::new(env));
 
+    let scan_limit = core::cmp::min(MAX_GRANTS_PER_SCAN, all_ids.len() as u32) as usize;
     let mut filtered = soroban_sdk::Vec::new(env);
-    for i in 0..all_ids.len() {
-        let gid = all_ids.get(i).unwrap();
+    for i in 0..scan_limit {
+        if i >= all_ids.len() {
+            break;
+        }
+        let gid = all_ids.get(i as u32).unwrap();
         let last_updated = get_last_updated(env, gid);
         if let Some(after) = last_updated_after {
             if last_updated <= after {
@@ -129,9 +135,13 @@ pub fn export_milestones_since(
         .unwrap_or_else(|| Vec::new(env));
 
     let mut all_milestones = soroban_sdk::Vec::new(env);
+    let scan_limit = core::cmp::min(MAX_GRANTS_PER_SCAN, all_ids.len() as u32) as usize;
 
-    for i in 0..all_ids.len() {
-        let gid = all_ids.get(i).unwrap();
+    for i in 0..scan_limit {
+        if i >= all_ids.len() {
+            break;
+        }
+        let gid = all_ids.get(i as u32).unwrap();
         if let Some(grant) = Storage::get_grant(env, gid) {
             for idx in 0..grant.total_milestones {
                 if let Some(milestone) = Storage::get_milestone(env, gid, idx) {

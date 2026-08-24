@@ -170,6 +170,37 @@ pub fn contribute(
         PERSISTENT_TTL_EXTEND_TO,
     );
 
+    // Track contributor for this grant
+    let grant_contributors_key =
+        DataKey::Matching(MatchingKey::GrantContributors(round_id, grant_id));
+    let mut contributors: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&grant_contributors_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    let mut is_new_contributor = true;
+    for i in 0..contributors.len() {
+        if let Some(addr) = contributors.get(i) {
+            if addr == *contributor {
+                is_new_contributor = false;
+                break;
+            }
+        }
+    }
+
+    if is_new_contributor {
+        contributors.push_back(contributor.clone());
+        env.storage()
+            .persistent()
+            .set(&grant_contributors_key, &contributors);
+        env.storage().persistent().extend_ttl(
+            &grant_contributors_key,
+            PERSISTENT_TTL_THRESHOLD,
+            PERSISTENT_TTL_EXTEND_TO,
+        );
+    }
+
     // Transfer from contributor to contract escrow
     crate::reentrancy::protect_external_call(env, || {
         token::Client::new(env, &round.token).transfer(
@@ -343,17 +374,37 @@ pub fn get_allocations(env: &Env, round_id: u32) -> Vec<MatchingAllocation> {
 /// Compute QF score for a grant by summing square roots of all contributions.
 /// Returns (qf_score, total_direct_contributions, unique_contributor_count)
 fn compute_grant_qf_score(env: &Env, round_id: u32, grant_id: u64) -> (i128, i128, u32) {
-    let mut qf_score: i128 = 0;
+    let grant_contributors_key =
+        DataKey::Matching(MatchingKey::GrantContributors(round_id, grant_id));
+    let contributors: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&grant_contributors_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    let unique_contributors = contributors.len() as u32;
     let mut total_direct: i128 = 0;
-    let mut unique_contributors: u32 = 0;
-    let mut contributors: Vec<Address> = Vec::new(env);
+    let mut sqrt_sum: i128 = 0;
 
-    // This would require iterating through all contributions
-    // For now, we use a simplified approach with a Map lookup
-    // In production, you'd need a proper iterator pattern
+    // Sum sqrt of each contribution
+    for i in 0..contributors.len() {
+        if let Some(contributor) = contributors.get(i) {
+            let contrib_key = DataKey::Matching(MatchingKey::Contribution(
+                round_id,
+                contributor.clone(),
+                grant_id,
+            ));
+            if let Some(contribution) = env.storage().persistent().get(&contrib_key) {
+                total_direct = total_direct.saturating_add(contribution.amount);
+                let sqrt_amount = isqrt(contribution.amount);
+                sqrt_sum = sqrt_sum.saturating_add(sqrt_amount);
+            }
+        }
+    }
 
-    // Placeholder: compute from allocations stored during contributions
-    // The actual implementation would iterate through contributions stored per grant
+    // QF score is the square of the sum of square roots
+    let qf_score = sqrt_sum.checked_mul(sqrt_sum).unwrap_or(0);
+
     (qf_score, total_direct, unique_contributors)
 }
 
