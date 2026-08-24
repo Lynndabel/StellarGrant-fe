@@ -613,4 +613,85 @@ mod tests {
             });
         })));
     }
+
+    #[test]
+    fn test_join_waitlist_rate_limited() {
+        // Repeated automated joins from the same applicant address across
+        // many grants are throttled once RATE_LIMIT_WAITLIST_JOIN_MAX is hit
+        // within the rate limit window, rather than succeeding indefinitely.
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = register(&env);
+
+        let owner = Address::generate(&env);
+        let applicant = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            setup_contributor(&env, &applicant, 500);
+        });
+
+        let max = crate::constants::RATE_LIMIT_WAITLIST_JOIN_MAX;
+
+        for grant_id in 1..=max as u64 {
+            env.as_contract(&contract_id, || {
+                setup_grant(&env, grant_id, &owner);
+                let config = WaitlistConfig {
+                    grant_id,
+                    max_slots: 2,
+                    max_waitlist_size: 10,
+                    rank_by_reputation: false,
+                    auto_promote: true,
+                };
+                configure(&env, &owner, grant_id, config).unwrap();
+                join(&env, &applicant, grant_id).unwrap();
+            });
+        }
+
+        // One more join (a new grant) from the same applicant within the
+        // same window must be throttled rather than silently succeeding.
+        let extra_grant_id = max as u64 + 1;
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, extra_grant_id, &owner);
+            let config = WaitlistConfig {
+                grant_id: extra_grant_id,
+                max_slots: 2,
+                max_waitlist_size: 10,
+                rank_by_reputation: false,
+                auto_promote: true,
+            };
+            configure(&env, &owner, extra_grant_id, config).unwrap();
+
+            let result = join(&env, &applicant, extra_grant_id);
+            assert_eq!(result, Err(ContractError::InvalidInput));
+        });
+    }
+
+    #[test]
+    fn test_join_waitlist_legitimate_infrequent_use_unaffected() {
+        // A real applicant joining a single grant's waitlist once (well
+        // under the rate limit) is unaffected by the throttling.
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = register(&env);
+
+        let owner = Address::generate(&env);
+        let applicant = Address::generate(&env);
+        let grant_id = 1;
+        let config = WaitlistConfig {
+            grant_id,
+            max_slots: 2,
+            max_waitlist_size: 10,
+            rank_by_reputation: false,
+            auto_promote: true,
+        };
+
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config).unwrap();
+            setup_contributor(&env, &applicant, 500);
+
+            let position = join(&env, &applicant, grant_id).unwrap();
+            assert_eq!(position, 1);
+        });
+    }
 }
