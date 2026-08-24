@@ -6,18 +6,19 @@ use crate::storage::Storage;
 use crate::types::{ContractError, RegistryEntry, RegistryEntryType};
 
 /// Add a contributor to the global registry index. Called on registration.
+///
+/// Does not itself check for a pre-existing entry: the `contributor_register`
+/// entrypoint in lib.rs already performs an O(1) `Storage::get_contributor`
+/// duplicate check before calling this function (and before the contributor
+/// profile is written), so re-scanning the whole index here would be
+/// redundant and O(n) per registration. Callers other than that entrypoint
+/// must perform an equivalent duplicate check before calling this function.
 pub fn register_contributor(
     env: &Env,
     address: &Address,
     name: &String,
 ) -> Result<(), ContractError> {
     let mut index = Storage::get_contributor_index(env);
-
-    for entry in index.iter() {
-        if entry.address == *address {
-            return Err(ContractError::AlreadyRegistered);
-        }
-    }
 
     let entry = RegistryEntry {
         address: address.clone(),
