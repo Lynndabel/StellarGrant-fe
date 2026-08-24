@@ -55,11 +55,11 @@ pub fn calculate_refund(
     let grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
     let policy = get_policy(env, grant_id);
     let gross = grant.escrow_balance;
-    let now = env.ledger().sequence();
-    let start = grant.timestamp as u32;
+    let now = env.ledger().timestamp();
+    let start = grant.timestamp;
     let mut applied = policy.policy_type.clone();
     let raw = if policy.grace_period_ledgers > 0
-        && now < start.saturating_add(policy.grace_period_ledgers)
+        && now < start.saturating_add(policy.grace_period_ledgers as u64)
     {
         applied = RefundPolicyType::FullRefund;
         gross
@@ -84,7 +84,7 @@ pub fn calculate_refund(
             RefundPolicyType::TimeWeighted => time_weighted_refund(
                 gross,
                 start,
-                start.saturating_add(grant.total_milestones.saturating_mul(10_000)),
+                start.saturating_add((grant.total_milestones as u64).saturating_mul(10_000)),
                 now,
             ),
             RefundPolicyType::PenaltyOnCancel => gross.saturating_sub(
@@ -116,15 +116,23 @@ pub fn execute_refund(
     grant_id: u64,
     canceller: &Address,
 ) -> Result<RefundCalculation, ContractError> {
+    crate::reentrancy::protect(env)?;
     let calc = calculate_refund(env, grant_id, canceller)?;
     let mut grant = Storage::get_grant(env, grant_id).ok_or(ContractError::GrantNotFound)?;
     let client = token::Client::new(env, &grant.token);
+
+    grant.escrow_balance = 0;
+    Storage::set_grant(env, grant_id, &grant);
+
     if calc.contributor_compensation > 0 {
-        client.transfer(
-            &env.current_contract_address(),
-            &grant.owner,
-            &calc.contributor_compensation,
-        );
+        crate::reentrancy::protect_external_call(env, || {
+            client.transfer(
+                &env.current_contract_address(),
+                &grant.owner,
+                &calc.contributor_compensation,
+            );
+            Ok(())
+        })?;
     }
     if calc.funder_refund > 0 {
         let mut total: i128 = 0;
@@ -145,31 +153,33 @@ pub fn execute_refund(
                         .unwrap_or(0)
                 };
                 if amount > 0 {
-                    client.transfer(&env.current_contract_address(), &fund.funder, &amount);
+                    let funder = fund.funder.clone();
+                    crate::reentrancy::protect_external_call(env, || {
+                        client.transfer(&env.current_contract_address(), &funder, &amount);
+                        Ok(())
+                    })?;
                     paid = paid.saturating_add(amount);
                 }
             }
         }
     }
-    grant.escrow_balance = 0;
-    Storage::set_grant(env, grant_id, &grant);
     Ok(calc)
 }
 
 pub fn time_weighted_refund(
     gross: i128,
-    start_ledger: u32,
-    end_ledger: u32,
-    current_ledger: u32,
+    start_time: u64,
+    end_time: u64,
+    current_time: u64,
 ) -> i128 {
-    if gross <= 0 || end_ledger <= start_ledger || current_ledger >= end_ledger {
+    if gross <= 0 || end_time <= start_time || current_time >= end_time {
         return 0;
     }
-    if current_ledger <= start_ledger {
+    if current_time <= start_time {
         return gross;
     }
     gross
-        .saturating_mul(end_ledger.saturating_sub(current_ledger) as i128)
-        .checked_div(end_ledger.saturating_sub(start_ledger) as i128)
+        .saturating_mul(end_time.saturating_sub(current_time) as i128)
+        .checked_div(end_time.saturating_sub(start_time) as i128)
         .unwrap_or(0)
 }

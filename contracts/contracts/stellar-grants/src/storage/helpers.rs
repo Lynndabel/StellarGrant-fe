@@ -1502,8 +1502,8 @@ impl Storage {
 
     // ── Issue #568: Grant Transfer ────────────────────────────────────────────
 
-    pub fn get_transfer_proposal(env: &Env, grant_id: u64) -> Option<TransferProposal> {
-        let key = DataKey::Grant(GrantKey::Transfer(grant_id));
+    pub fn get_transfer_proposal(env: &Env, grant_id: u64, role: &TransferableRole) -> Option<TransferProposal> {
+        let key = DataKey::Grant(GrantKey::Transfer(grant_id, role.clone()));
         let v = env.storage().persistent().get(&key);
         if v.is_some() {
             Self::bump(env, &key);
@@ -1511,16 +1511,16 @@ impl Storage {
         v
     }
 
-    pub fn set_transfer_proposal(env: &Env, grant_id: u64, proposal: &TransferProposal) {
-        let key = DataKey::Grant(GrantKey::Transfer(grant_id));
+    pub fn set_transfer_proposal(env: &Env, grant_id: u64, role: &TransferableRole, proposal: &TransferProposal) {
+        let key = DataKey::Grant(GrantKey::Transfer(grant_id, role.clone()));
         env.storage().persistent().set(&key, proposal);
         Self::bump(env, &key);
     }
 
-    pub fn remove_transfer_proposal(env: &Env, grant_id: u64) {
+    pub fn remove_transfer_proposal(env: &Env, grant_id: u64, role: &TransferableRole) {
         env.storage()
             .persistent()
-            .remove(&DataKey::Grant(GrantKey::Transfer(grant_id)));
+            .remove(&DataKey::Grant(GrantKey::Transfer(grant_id, role.clone())));
     }
 
     // ── Issue #583: Typed Evidence Schemas ───────────────────────────────────

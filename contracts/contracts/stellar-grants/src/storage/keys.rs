@@ -1,4 +1,4 @@
-use crate::types::{ProtocolModule, RateLimitAction, Role, WhitelistScope};
+use crate::types::{ProtocolModule, RateLimitAction, Role, TransferableRole, WhitelistScope};
 use soroban_sdk::{contracttype, Address, Bytes, String, Symbol};
 
 // ── Domain sub-enums ─────────────────────────────────────────────────────────
@@ -18,7 +18,7 @@ pub enum GrantKey {
     CurrentVersion(u64),
     Amendment(u64, u32),
     AmendmentHistory(u64),
-    Transfer(u64),
+    Transfer(u64, TransferableRole),
     Renewal(u64),
     RenewalHistory(u64),
     Fork(u64),
@@ -168,6 +168,7 @@ pub enum ReviewerRewardKey {
     Pool(Address),
     Participation(Address, u64),
     RewardRecord(Address, Address),
+    ParticipationIndex(Address),
 }
 
 #[contracttype]
