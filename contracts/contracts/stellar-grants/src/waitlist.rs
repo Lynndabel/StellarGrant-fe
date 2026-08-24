@@ -195,20 +195,77 @@ pub fn position_of(env: &Env, applicant: &Address, grant_id: u64) -> Option<u32>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::StellarGrantsContract;
     use soroban_sdk::testutils::{Address as _, Ledger as _};
     use soroban_sdk::{Address, String};
+
+    /// Register the contract and return its address so tests can wrap
+    /// storage-touching calls in `env.as_contract(&contract_id, || { ... })`
+    /// — required because this soroban-sdk version rejects storage access
+    /// (and thus `require_auth()`) outside of a contract execution context.
+    ///
+    /// Under `mock_all_auths()`, calling `require_auth()` twice for the same
+    /// address within one `as_contract` block trips "frame is already
+    /// authorized" (direct Rust calls don't create the separate invocation
+    /// frames a real dispatched contract call would). When a test needs the
+    /// same address to go through a second authorized call (e.g. `join`
+    /// then `leave` for the same applicant), give that second call its own
+    /// `as_contract` block.
+    fn register(env: &Env) -> Address {
+        env.register(StellarGrantsContract, ())
+    }
+
+    fn setup_grant(env: &Env, grant_id: u64, owner: &Address) {
+        let grant = crate::types::Grant {
+            id: grant_id,
+            owner: owner.clone(),
+            title: String::from_str(env, "Test Grant"),
+            description: String::from_str(env, "Test"),
+            token: Address::generate(env),
+            status: crate::types::GrantStatus::Active,
+            total_amount: 1000,
+            milestone_amount: 0,
+            reviewers: Vec::new(env),
+            total_milestones: 0,
+            milestones_paid_out: 0,
+            escrow_balance: 0,
+            funders: Vec::new(env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        };
+        Storage::set_grant(env, grant_id, &grant);
+    }
+
+    fn setup_contributor(env: &Env, address: &Address, reputation_score: u64) {
+        let profile = crate::types::ContributorProfile {
+            contributor: address.clone(),
+            name: String::from_str(env, "Applicant"),
+            reputation_score,
+            total_earned: 0,
+            milestones_completed: 0,
+            milestones_rejected: 0,
+            bio: String::from_str(env, ""),
+            skills: Vec::new(env),
+            github_url: String::from_str(env, ""),
+            registration_timestamp: 0,
+            grants_count: 0,
+            last_action_at: 0,
+        };
+        Storage::set_contributor(env, address.clone(), &profile);
+    }
 
     #[test]
     fn test_join_waitlist_reputation_ranked() {
         let env = Env::default();
         env.mock_all_auths();
+        let contract_id = register(&env);
 
         let owner = Address::generate(&env);
         let applicant1 = Address::generate(&env);
         let applicant2 = Address::generate(&env);
         let applicant3 = Address::generate(&env);
 
-        // Setup grant
         let grant_id = 1;
         let config = WaitlistConfig {
             grant_id,
@@ -218,79 +275,37 @@ mod tests {
             auto_promote: true,
         };
 
-        // Configure waitlist
-        configure(&env, &owner, grant_id, config.clone()).unwrap();
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config.clone()).unwrap();
 
-        // Create contributor profiles with different reputations
-        let mut profile1 = crate::types::ContributorProfile {
-            contributor: applicant1.clone(),
-            name: String::from_str(&env, "Applicant1"),
-            reputation_score: 500,
-            total_earned: 0,
-            milestones_completed: 0,
-            milestones_rejected: 0,
-            bio: String::from_str(&env, ""),
-            skills: Vec::new(&env),
-            github_url: String::from_str(&env, ""),
-            registration_timestamp: 0,
-            grants_count: 0,
-            last_action_at: 0,
-        };
-        Storage::set_contributor(&env, applicant1.clone(), &mut profile1);
+            // Reputations: applicant1 (500), applicant2 (800), applicant3 (600)
+            setup_contributor(&env, &applicant1, 500);
+            setup_contributor(&env, &applicant2, 800);
+            setup_contributor(&env, &applicant3, 600);
 
-        let mut profile2 = crate::types::ContributorProfile {
-            contributor: applicant2.clone(),
-            name: String::from_str(&env, "Applicant2"),
-            reputation_score: 800,
-            total_earned: 0,
-            milestones_completed: 0,
-            milestones_rejected: 0,
-            bio: String::from_str(&env, ""),
-            skills: Vec::new(&env),
-            github_url: String::from_str(&env, ""),
-            registration_timestamp: 0,
-            grants_count: 0,
-            last_action_at: 0,
-        };
-        Storage::set_contributor(&env, applicant2.clone(), &mut profile2);
+            join(&env, &applicant1, grant_id).unwrap();
+            join(&env, &applicant2, grant_id).unwrap();
+            join(&env, &applicant3, grant_id).unwrap();
 
-        let mut profile3 = crate::types::ContributorProfile {
-            contributor: applicant3.clone(),
-            name: String::from_str(&env, "Applicant3"),
-            reputation_score: 600,
-            total_earned: 0,
-            milestones_completed: 0,
-            milestones_rejected: 0,
-            bio: String::from_str(&env, ""),
-            skills: Vec::new(&env),
-            github_url: String::from_str(&env, ""),
-            registration_timestamp: 0,
-            grants_count: 0,
-            last_action_at: 0,
-        };
-        Storage::set_contributor(&env, applicant3.clone(), &mut profile3);
+            let waitlist = get_waitlist(&env, grant_id);
+            assert_eq!(waitlist.len(), 3);
 
-        // Join in order: applicant1 (500), applicant2 (800), applicant3 (600)
-        join(&env, &applicant1, grant_id).unwrap();
-        join(&env, &applicant2, grant_id).unwrap();
-        join(&env, &applicant3, grant_id).unwrap();
-
-        let waitlist = get_waitlist(&env, grant_id);
-        assert_eq!(waitlist.len(), 3);
-
-        // Verify order: highest reputation first (800, 600, 500)
-        assert_eq!(waitlist.get(0).unwrap().applicant, applicant2);
-        assert_eq!(waitlist.get(0).unwrap().position, 1);
-        assert_eq!(waitlist.get(1).unwrap().applicant, applicant3);
-        assert_eq!(waitlist.get(1).unwrap().position, 2);
-        assert_eq!(waitlist.get(2).unwrap().applicant, applicant1);
-        assert_eq!(waitlist.get(2).unwrap().position, 3);
+            // Verify order: highest reputation first (800, 600, 500)
+            assert_eq!(waitlist.get(0).unwrap().applicant, applicant2);
+            assert_eq!(waitlist.get(0).unwrap().position, 1);
+            assert_eq!(waitlist.get(1).unwrap().applicant, applicant3);
+            assert_eq!(waitlist.get(1).unwrap().position, 2);
+            assert_eq!(waitlist.get(2).unwrap().applicant, applicant1);
+            assert_eq!(waitlist.get(2).unwrap().position, 3);
+        });
     }
 
     #[test]
     fn test_join_waitlist_fifo() {
         let env = Env::default();
         env.mock_all_auths();
+        let contract_id = register(&env);
 
         let owner = Address::generate(&env);
         let applicant1 = Address::generate(&env);
@@ -306,48 +321,33 @@ mod tests {
             auto_promote: true,
         };
 
-        configure(&env, &owner, grant_id, config.clone()).unwrap();
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config.clone()).unwrap();
 
-        let mut profile = crate::types::ContributorProfile {
-            contributor: applicant1.clone(),
-            name: String::from_str(&env, "Applicant1"),
-            reputation_score: 500,
-            total_earned: 0,
-            milestones_completed: 0,
-            milestones_rejected: 0,
-            bio: String::from_str(&env, ""),
-            skills: Vec::new(&env),
-            github_url: String::from_str(&env, ""),
-            registration_timestamp: 0,
-            grants_count: 0,
-            last_action_at: 0,
-        };
-        Storage::set_contributor(&env, applicant1.clone(), &mut profile);
+            setup_contributor(&env, &applicant1, 500);
+            setup_contributor(&env, &applicant2, 500);
+            setup_contributor(&env, &applicant3, 500);
 
-        profile.contributor = applicant2.clone();
-        Storage::set_contributor(&env, applicant2.clone(), &mut profile);
+            join(&env, &applicant1, grant_id).unwrap();
+            join(&env, &applicant2, grant_id).unwrap();
+            join(&env, &applicant3, grant_id).unwrap();
 
-        profile.contributor = applicant3.clone();
-        Storage::set_contributor(&env, applicant3.clone(), &mut profile);
+            let waitlist = get_waitlist(&env, grant_id);
+            assert_eq!(waitlist.len(), 3);
 
-        // Join in order
-        join(&env, &applicant1, grant_id).unwrap();
-        join(&env, &applicant2, grant_id).unwrap();
-        join(&env, &applicant3, grant_id).unwrap();
-
-        let waitlist = get_waitlist(&env, grant_id);
-        assert_eq!(waitlist.len(), 3);
-
-        // Verify FIFO order
-        assert_eq!(waitlist.get(0).unwrap().applicant, applicant1);
-        assert_eq!(waitlist.get(1).unwrap().applicant, applicant2);
-        assert_eq!(waitlist.get(2).unwrap().applicant, applicant3);
+            // Verify FIFO order
+            assert_eq!(waitlist.get(0).unwrap().applicant, applicant1);
+            assert_eq!(waitlist.get(1).unwrap().applicant, applicant2);
+            assert_eq!(waitlist.get(2).unwrap().applicant, applicant3);
+        });
     }
 
     #[test]
     fn test_leave_waitlist() {
         let env = Env::default();
         env.mock_all_auths();
+        let contract_id = register(&env);
 
         let owner = Address::generate(&env);
         let applicant1 = Address::generate(&env);
@@ -363,49 +363,39 @@ mod tests {
             auto_promote: true,
         };
 
-        configure(&env, &owner, grant_id, config.clone()).unwrap();
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config.clone()).unwrap();
 
-        let mut profile = crate::types::ContributorProfile {
-            contributor: applicant1.clone(),
-            name: String::from_str(&env, "Applicant1"),
-            reputation_score: 500,
-            total_earned: 0,
-            milestones_completed: 0,
-            milestones_rejected: 0,
-            bio: String::from_str(&env, ""),
-            skills: Vec::new(&env),
-            github_url: String::from_str(&env, ""),
-            registration_timestamp: 0,
-            grants_count: 0,
-            last_action_at: 0,
-        };
-        Storage::set_contributor(&env, applicant1.clone(), &mut profile);
+            setup_contributor(&env, &applicant1, 500);
+            setup_contributor(&env, &applicant2, 500);
+            setup_contributor(&env, &applicant3, 500);
 
-        profile.contributor = applicant2.clone();
-        Storage::set_contributor(&env, applicant2.clone(), &mut profile);
+            join(&env, &applicant1, grant_id).unwrap();
+            join(&env, &applicant2, grant_id).unwrap();
+            join(&env, &applicant3, grant_id).unwrap();
+        });
 
-        profile.contributor = applicant3.clone();
-        Storage::set_contributor(&env, applicant3.clone(), &mut profile);
+        // leave() re-authorizes applicant2, which under mock_all_auths must
+        // happen in its own invocation frame (see `register`'s doc comment).
+        env.as_contract(&contract_id, || {
+            // Leave from middle
+            leave(&env, &applicant2, grant_id).unwrap();
 
-        join(&env, &applicant1, grant_id).unwrap();
-        join(&env, &applicant2, grant_id).unwrap();
-        join(&env, &applicant3, grant_id).unwrap();
-
-        // Leave from middle
-        leave(&env, &applicant2, grant_id).unwrap();
-
-        let waitlist = get_waitlist(&env, grant_id);
-        assert_eq!(waitlist.len(), 2);
-        assert_eq!(waitlist.get(0).unwrap().applicant, applicant1);
-        assert_eq!(waitlist.get(0).unwrap().position, 1);
-        assert_eq!(waitlist.get(1).unwrap().applicant, applicant3);
-        assert_eq!(waitlist.get(1).unwrap().position, 2);
+            let waitlist = get_waitlist(&env, grant_id);
+            assert_eq!(waitlist.len(), 2);
+            assert_eq!(waitlist.get(0).unwrap().applicant, applicant1);
+            assert_eq!(waitlist.get(0).unwrap().position, 1);
+            assert_eq!(waitlist.get(1).unwrap().applicant, applicant3);
+            assert_eq!(waitlist.get(1).unwrap().position, 2);
+        });
     }
 
     #[test]
     fn test_waitlist_full() {
         let env = Env::default();
         env.mock_all_auths();
+        let contract_id = register(&env);
 
         let owner = Address::generate(&env);
         let applicant1 = Address::generate(&env);
@@ -421,42 +411,28 @@ mod tests {
             auto_promote: true,
         };
 
-        configure(&env, &owner, grant_id, config.clone()).unwrap();
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config.clone()).unwrap();
 
-        let mut profile = crate::types::ContributorProfile {
-            contributor: applicant1.clone(),
-            name: String::from_str(&env, "Applicant1"),
-            reputation_score: 500,
-            total_earned: 0,
-            milestones_completed: 0,
-            milestones_rejected: 0,
-            bio: String::from_str(&env, ""),
-            skills: Vec::new(&env),
-            github_url: String::from_str(&env, ""),
-            registration_timestamp: 0,
-            grants_count: 0,
-            last_action_at: 0,
-        };
-        Storage::set_contributor(&env, applicant1.clone(), &mut profile);
+            setup_contributor(&env, &applicant1, 500);
+            setup_contributor(&env, &applicant2, 500);
+            setup_contributor(&env, &applicant3, 500);
 
-        profile.contributor = applicant2.clone();
-        Storage::set_contributor(&env, applicant2.clone(), &mut profile);
+            join(&env, &applicant1, grant_id).unwrap();
+            join(&env, &applicant2, grant_id).unwrap();
 
-        profile.contributor = applicant3.clone();
-        Storage::set_contributor(&env, applicant3.clone(), &mut profile);
-
-        join(&env, &applicant1, grant_id).unwrap();
-        join(&env, &applicant2, grant_id).unwrap();
-
-        // Third applicant should fail
-        let result = join(&env, &applicant3, grant_id);
-        assert_eq!(result, Err(ContractError::WaitlistFull));
+            // Third applicant should fail
+            let result = join(&env, &applicant3, grant_id);
+            assert_eq!(result, Err(ContractError::WaitlistFull));
+        });
     }
 
     #[test]
     fn test_promote_next() {
         let env = Env::default();
         env.mock_all_auths();
+        let contract_id = register(&env);
 
         let owner = Address::generate(&env);
         let applicant1 = Address::generate(&env);
@@ -471,44 +447,32 @@ mod tests {
             auto_promote: true,
         };
 
-        configure(&env, &owner, grant_id, config.clone()).unwrap();
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config.clone()).unwrap();
 
-        let mut profile = crate::types::ContributorProfile {
-            contributor: applicant1.clone(),
-            name: String::from_str(&env, "Applicant1"),
-            reputation_score: 500,
-            total_earned: 0,
-            milestones_completed: 0,
-            milestones_rejected: 0,
-            bio: String::from_str(&env, ""),
-            skills: Vec::new(&env),
-            github_url: String::from_str(&env, ""),
-            registration_timestamp: 0,
-            grants_count: 0,
-            last_action_at: 0,
-        };
-        Storage::set_contributor(&env, applicant1.clone(), &mut profile);
+            setup_contributor(&env, &applicant1, 500);
+            setup_contributor(&env, &applicant2, 500);
 
-        profile.contributor = applicant2.clone();
-        Storage::set_contributor(&env, applicant2.clone(), &mut profile);
+            join(&env, &applicant1, grant_id).unwrap();
+            join(&env, &applicant2, grant_id).unwrap();
 
-        join(&env, &applicant1, grant_id).unwrap();
-        join(&env, &applicant2, grant_id).unwrap();
+            // Promote first
+            let promoted = promote_next(&env, grant_id);
+            assert_eq!(promoted, Some(applicant1.clone()));
 
-        // Promote first
-        let promoted = promote_next(&env, grant_id);
-        assert_eq!(promoted, Some(applicant1.clone()));
-
-        let waitlist = get_waitlist(&env, grant_id);
-        assert_eq!(waitlist.len(), 1);
-        assert_eq!(waitlist.get(0).unwrap().applicant, applicant2);
-        assert_eq!(waitlist.get(0).unwrap().position, 1);
+            let waitlist = get_waitlist(&env, grant_id);
+            assert_eq!(waitlist.len(), 1);
+            assert_eq!(waitlist.get(0).unwrap().applicant, applicant2);
+            assert_eq!(waitlist.get(0).unwrap().position, 1);
+        });
     }
 
     #[test]
     fn test_position_of() {
         let env = Env::default();
         env.mock_all_auths();
+        let contract_id = register(&env);
 
         let owner = Address::generate(&env);
         let applicant1 = Address::generate(&env);
@@ -523,34 +487,21 @@ mod tests {
             auto_promote: true,
         };
 
-        configure(&env, &owner, grant_id, config.clone()).unwrap();
+        env.as_contract(&contract_id, || {
+            setup_grant(&env, grant_id, &owner);
+            configure(&env, &owner, grant_id, config.clone()).unwrap();
 
-        let mut profile = crate::types::ContributorProfile {
-            contributor: applicant1.clone(),
-            name: String::from_str(&env, "Applicant1"),
-            reputation_score: 500,
-            total_earned: 0,
-            milestones_completed: 0,
-            milestones_rejected: 0,
-            bio: String::from_str(&env, ""),
-            skills: Vec::new(&env),
-            github_url: String::from_str(&env, ""),
-            registration_timestamp: 0,
-            grants_count: 0,
-            last_action_at: 0,
-        };
-        Storage::set_contributor(&env, applicant1.clone(), &mut profile);
+            setup_contributor(&env, &applicant1, 500);
+            setup_contributor(&env, &applicant2, 500);
 
-        profile.contributor = applicant2.clone();
-        Storage::set_contributor(&env, applicant2.clone(), &mut profile);
+            join(&env, &applicant1, grant_id).unwrap();
+            join(&env, &applicant2, grant_id).unwrap();
 
-        join(&env, &applicant1, grant_id).unwrap();
-        join(&env, &applicant2, grant_id).unwrap();
+            assert_eq!(position_of(&env, &applicant1, grant_id), Some(1));
+            assert_eq!(position_of(&env, &applicant2, grant_id), Some(2));
 
-        assert_eq!(position_of(&env, &applicant1, grant_id), Some(1));
-        assert_eq!(position_of(&env, &applicant2, grant_id), Some(2));
-
-        let other = Address::generate(&env);
-        assert_eq!(position_of(&env, &other, grant_id), None);
+            let other = Address::generate(&env);
+            assert_eq!(position_of(&env, &other, grant_id), None);
+        });
     }
 }
