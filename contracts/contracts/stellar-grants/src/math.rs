@@ -12,7 +12,7 @@ pub fn safe_sub(a: i128, b: i128) -> Result<i128, ContractError> {
 
 /// Compute `basis_points / 10_000` of `amount` safely without intermediate overflow.
 /// Uses the identity: `(amount / 10_000) * bps + (amount % 10_000) * bps / 10_000`
-/// Returns Err(InvalidInput) if basis_points > 10_000. 
+/// Returns Err(InvalidInput) if basis_points > 10_000.
 pub fn basis_points_of(amount: i128, basis_points: u32) -> Result<i128, ContractError> {
     if amount < 0 {
         return Err(ContractError::InvalidInput);

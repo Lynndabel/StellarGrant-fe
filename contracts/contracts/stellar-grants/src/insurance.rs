@@ -67,6 +67,10 @@ pub fn purchase_policy(
         .checked_div(BASIS_POINTS_SCALE as i128)
         .ok_or(ContractError::InvalidInput)?;
 
+    if premium == 0 {
+        return Err(ContractError::InvalidInput);
+    }
+
     if premium > 0 {
         let token_client = token::Client::new(env, token);
         crate::reentrancy::protect_external_call(env, || {
@@ -299,6 +303,16 @@ mod tests {
         let policy = purchase_policy(&env, &policyholder, 1, &token, coverage).unwrap();
         assert_eq!(policy.premium_paid, 5_000);
         assert_eq!(pool_balance(&env, &token), 5_000);
+    }
+
+    #[test]
+    fn test_zero_premium_rejected() {
+        let (env, _admin, policyholder, token) = setup();
+        // coverage_amount <= 199 results in premium = 0 due to integer division
+        // 199 * 50 / 10_000 = 0
+        let coverage = 199i128;
+        let err = purchase_policy(&env, &policyholder, 1, &token, coverage).unwrap_err();
+        assert_eq!(err, ContractError::InvalidInput);
     }
 
     #[test]
